@@ -8,15 +8,17 @@ use std::{
 
 use anyhow::Context;
 use clap_num::si_number;
+use defmt_decoder::log::format::{Formatter, FormatterConfig, FormatterFormat};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use probe_rs::{
-    Core, MemoryInterface, Permissions,
+    Core, MemoryInterface, Permissions, Session,
     architecture::arm::dp::DpAddress,
     flashing::{
         self, DownloadOptions, ElfLoader, ElfOptions, FlashProgress, ProgressEvent,
         ProgressOperation,
     },
     probe::{DebugProbeSelector, Probe, WireProtocol, list::Lister},
+    rtt::{self, Rtt, RttTarget},
 };
 use serde::Deserialize;
 use tracing_subscriber::EnvFilter;
@@ -145,6 +147,10 @@ struct Cli {
     /// Off by default, since verification takes roughly as long as the write itself.
     #[arg(long)]
     verify: bool,
+
+    /// Do not read defmt logs over RTT, even if the ELF contains defmt data.
+    #[arg(long)]
+    no_defmt: bool,
 }
 
 /// Config for things that don't belong on the command line, split by what they actually
@@ -491,6 +497,144 @@ fn run_serial_console((rx, handle): SerialReader) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// RTT up channel the defmt logger writes to. defmt-rtt only ever uses channel 0.
+const DEFMT_RTT_CHANNEL: usize = 0;
+
+/// Delay between two RTT polls when the last poll returned no data.
+const RTT_POLL_INTERVAL: Duration = Duration::from_millis(10);
+
+/// How long to wait for the firmware startup code to set up the RTT control block.
+const RTT_ATTACH_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Returns the RTT control block address and the defmt data if the ELF contains a defmt table.
+///
+/// Problems with the defmt data only cause a warning, so flashing and the serial console still
+/// work.
+fn detect_defmt(elf: &[u8]) -> anyhow::Result<Option<(u64, DefmtData)>> {
+    let table = match defmt_decoder::Table::parse(elf) {
+        Ok(Some(table)) => table,
+        Ok(None) => return Ok(None),
+        Err(e) => {
+            tracing::warn!("can not parse the defmt data of the ELF, not reading defmt logs: {e}");
+            return Ok(None);
+        }
+    };
+    let Some(rtt_addr) = rtt::find_rtt_control_block_in_raw_file(elf)? else {
+        tracing::warn!("ELF contains defmt data, but no RTT control block (_SEGGER_RTT)");
+        return Ok(None);
+    };
+    let locations = table.get_locations(elf).ok().filter(|l| !l.is_empty());
+    Ok(Some((rtt_addr, DefmtData { table, locations })))
+}
+
+/// Clears the control block ID, so a leftover control block from a previous run is not mistaken
+/// for the current one.
+fn clear_rtt_control_block_id(session: &mut Session, rtt_addr: u64) -> anyhow::Result<()> {
+    let mut memory = session.memory_access_port(0)?;
+    memory.write_8(rtt_addr, &[0; 16])?;
+    Ok(())
+}
+
+/// Must be called after the core runs. The control block can live in a section which is only
+/// initialized by the startup code, for example in `.ocm.data`.
+fn attach_rtt(session: &mut Session, rtt_addr: u64) -> anyhow::Result<Rtt> {
+    let rtt_target = RttTarget {
+        is_64_bit: false,
+        memory_regions: session.target().memory_map.clone(),
+    };
+    let start = Instant::now();
+    loop {
+        let mut memory = session.memory_access_port(0)?;
+        match Rtt::attach_at(&mut memory, &rtt_target, rtt_addr) {
+            Ok(rtt) => return Ok(rtt),
+            Err(e) if start.elapsed() >= RTT_ATTACH_TIMEOUT => return Err(e.into()),
+            Err(_) => std::thread::sleep(RTT_POLL_INTERVAL),
+        }
+    }
+}
+
+struct DefmtData {
+    table: defmt_decoder::Table,
+    /// Only available if the ELF contains debug info.
+    locations: Option<defmt_decoder::Locations>,
+}
+
+/// Polls the defmt RTT channel and prints decoded frames to stdout until `Ctrl+C`. Serial console
+/// output, if configured, is printed in between.
+///
+/// RTT is read through the memory access port instead of the core, because a Cortex-A9 core can
+/// only access memory over the debug interface while halted.
+fn run_defmt_console(
+    session: &mut Session,
+    mut rtt: Rtt,
+    defmt: &DefmtData,
+    serial_reader: Option<SerialReader>,
+) -> anyhow::Result<()> {
+    let DefmtData { table, locations } = defmt;
+    let mut decoder = table.new_stream_decoder();
+    // Same format probe-rs uses by default.
+    let formatter = Formatter::new(FormatterConfig {
+        format: FormatterFormat::OneLine {
+            with_location: locations.is_some(),
+        },
+        is_timestamp_available: table.has_timestamp(),
+    });
+    let mut stdout = std::io::stdout();
+    let mut buf = [0u8; 1024];
+    let channel = rtt
+        .up_channel(DEFMT_RTT_CHANNEL)
+        .with_context(|| "firmware has no RTT up channel for defmt")?;
+
+    while !SHUTDOWN_REQUESTED.load(Ordering::Relaxed) {
+        if let Some((rx, _)) = &serial_reader {
+            for chunk in rx.try_iter() {
+                stdout.write_all(&chunk)?;
+            }
+            stdout.flush()?;
+        }
+
+        let mut memory = session.memory_access_port(0)?;
+        let count = channel.read(&mut memory, &mut buf)?;
+        if count == 0 {
+            std::thread::sleep(RTT_POLL_INTERVAL);
+            continue;
+        }
+        decoder.received(&buf[..count]);
+        loop {
+            match decoder.decode() {
+                Ok(frame) => {
+                    let location = locations.as_ref().and_then(|l| l.get(&frame.index()));
+                    let file = location.map(|l| l.file.display().to_string());
+                    println!(
+                        "{}",
+                        formatter.format_frame(
+                            frame,
+                            file.as_deref(),
+                            location.and_then(|l| u32::try_from(l.line).ok()),
+                            location.map(|l| l.module.as_str()),
+                        )
+                    );
+                }
+                Err(defmt_decoder::DecodeError::UnexpectedEof) => break,
+                Err(defmt_decoder::DecodeError::Malformed) => {
+                    // The raw encoding has no frame boundaries, so the stream can not be resynced.
+                    if !table.encoding().can_recover() {
+                        anyhow::bail!("malformed defmt frame, can not recover with raw encoding");
+                    }
+                    tracing::warn!("malformed defmt frame");
+                }
+            }
+        }
+    }
+
+    if let Some((_, handle)) = serial_reader
+        && handle.join().is_err()
+    {
+        anyhow::bail!("serial console reader thread panicked");
+    }
+    Ok(())
+}
+
 /// Writes a few distinct bit patterns to DDR and reads them back, to give an unambiguous
 /// pass/fail signal for whether DDR is actually working, independent of whether an app flashed
 /// afterward appears to run. A stuck-at fault or bit swap from bad calibration won't show up as
@@ -744,6 +888,20 @@ fn main() -> anyhow::Result<()> {
     let arm_if = session.get_arm_interface()?;
     arm_if.select_debug_port(DpAddress::Default)?;
 
+    let defmt = if cli.no_defmt {
+        None
+    } else {
+        let elf = std::fs::read(&cli.elf)
+            .with_context(|| format!("failed to read ELF file {}", cli.elf.display()))?;
+        detect_defmt(&elf)?
+    };
+    if let Some((rtt_addr, _)) = &defmt {
+        tracing::info!("ELF contains defmt data, reading defmt logs over RTT");
+        // RAM keeps its content across resets. Clearing must happen before flashing, which either
+        // writes the new control block directly or lets the startup code copy it into place.
+        clear_rtt_control_block_id(&mut session, *rtt_addr)?;
+    }
+
     let format = ElfLoader(ElfOptions::default());
 
     // Must outlive `download_opts`: its `progress` field borrows this closure-captured state, and
@@ -796,9 +954,15 @@ fn main() -> anyhow::Result<()> {
     // CPU1 is sitting halted at the debug level, so make sure it's running too.
     let mut core1 = session.core(1)?;
     core1.run()?;
+    drop(core1);
 
-    if let Some(serial_reader) = serial_reader {
-        run_serial_console(serial_reader)?;
+    match (defmt, serial_reader) {
+        (Some((rtt_addr, defmt)), serial_reader) => {
+            let rtt = attach_rtt(&mut session, rtt_addr).with_context(|| "attaching RTT")?;
+            run_defmt_console(&mut session, rtt, &defmt, serial_reader)?
+        }
+        (None, Some(serial_reader)) => run_serial_console(serial_reader)?,
+        (None, None) => {}
     }
 
     Ok(())
