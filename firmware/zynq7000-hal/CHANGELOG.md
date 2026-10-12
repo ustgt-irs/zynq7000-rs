@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - `CpuPrivateTimerRegs` is not `Send` anymore because the registers are banked per core. The
   register block is accessed with `CpuPrivateTimerRegs::regs` instead of the public field.
 - `CpuPrivateTimerRegs::steal` and `CpuPrivateTimer::steal` are now `unsafe`.
+- `l2_cache::disable` is now `unsafe`. The L2 cache must be cleaned before.
 
 ## Added
 
