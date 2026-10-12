@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   `mmu_l1_table_mut` returned aliasing mutable references to the global L1 table.
 - `sd::commands::ACMD41_SEND_IF_COND` is renamed to `ACMD41_SD_SEND_OP_COND`.
 - Removed the unused `eth::tx_descr::IncrementResult`.
+- `CpuPrivateTimerRegs` is not `Send` anymore because the registers are banked per core. The
+  register block is accessed with `CpuPrivateTimerRegs::regs` instead of the public field.
+- `CpuPrivateTimerRegs::steal` and `CpuPrivateTimer::steal` are now `unsafe`.
 
 ## Added
 
