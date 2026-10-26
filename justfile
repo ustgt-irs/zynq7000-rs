@@ -4,12 +4,20 @@ GDB_CMD := justfile_directory() / "firmware/gdb.gdb"
 
 all: check build check-fmt clippy test docs-zynq
 check: (check-dir "firmware") (check-dir "host")
-clean: (clean-dir "firmware") (clean-dir "host")
+clean: (clean-dir "firmware") (clean-dir "host") clean-excluded
 build: build-zynq (build-dir "host")
 fmt: (fmt-dir "firmware") (fmt-dir "host")
 check-fmt: (check-fmt-dir "firmware") (check-fmt-dir "host")
 clippy: (clippy-dir "firmware") (clippy-dir "host")
 test: test-clock-calc test-ps7init
+
+# Clean job for everything not inside a workspace
+[working-directory: 'firmware']
+clean-excluded:
+  cd examples/zedboard-smp
+  cargo clean
+  cd examples/multiprio
+  cargo clean
 
 prepare-repo: download-zed-gateware
   cd {{justfile_directory()}}/host/z7-run && cargo install --path .
