@@ -293,7 +293,7 @@ pub struct Registers {
     interrupt_enable: InterruptControl,
     /// Interrupt Disable Register.
     #[mmio(Write)]
-    interupt_disable: InterruptControl,
+    interrupt_disable: InterruptControl,
     /// Interrupt Mask Register.
     #[mmio(PureRead)]
     enabled_interrupts: InterruptEnabled,

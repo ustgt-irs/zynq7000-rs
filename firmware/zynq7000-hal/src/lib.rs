@@ -110,7 +110,7 @@ pub enum SecondaryCoreInitError {
 
 /// GIC configuration applied by [init].
 #[derive(Debug)]
-pub enum InteruptConfig {
+pub enum InterruptConfig {
     /// GIC is configured to route all interrupts to CPU0. Suitable if the software handles all
     /// the interrupts and only runs on CPU0.
     AllInterruptsToCpu0,
@@ -127,7 +127,7 @@ pub struct Config {
     /// If this has some value, it will configure the level shifter between PS and PL.
     pub level_shifter_config: Option<LevelShifterConfig>,
     /// If this has some value, it configures the GIC to pre-defined settings.
-    pub interrupt_config: Option<InteruptConfig>,
+    pub interrupt_config: Option<InterruptConfig>,
     /// The PL starts in reset state after power-up. A first-stage bootloader is expected to clear
     /// this, but not every boot flow goes through one that does (e.g. JTAG-loaded applications), so
     /// every application relying on this generic init routine gets it unconditionally. Calling this
@@ -144,7 +144,7 @@ impl Default for Config {
         Self {
             init_l2_cache: true,
             level_shifter_config: Some(LevelShifterConfig::EnableAll),
-            interrupt_config: Some(InteruptConfig::AllInterruptsToCpu0),
+            interrupt_config: Some(InterruptConfig::AllInterruptsToCpu0),
             deassert_pl_reset: true,
             init_mmu: true,
         }
@@ -176,11 +176,11 @@ pub fn init(config: Config) -> Result<zynq7000::Peripherals, InitError> {
     if let Some(interrupt_config) = config.interrupt_config {
         let mut gic = gic::Configurator::new_with_init(periphs.gicc, periphs.gicd);
         match interrupt_config {
-            InteruptConfig::AllInterruptsToCpu0 => {
+            InterruptConfig::AllInterruptsToCpu0 => {
                 gic.enable_all_interrupts();
                 gic.set_all_spi_interrupt_targets_cpu0();
             }
-            InteruptConfig::Minimal => (),
+            InterruptConfig::Minimal => (),
         }
         gic.enable();
         // SAFETY: Not called inside a critical section.
