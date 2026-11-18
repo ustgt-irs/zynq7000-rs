@@ -51,6 +51,8 @@ Based upon the linker script from https://github.com/rust-embedded/cortex-m, via
 
 INCLUDE memory.x
 
+__zynq7000_rt_requires_z7link_x_linker_script = 1;
+
 ENTRY(_start);
 EXTERN(_vector_table);
 EXTERN(_start);

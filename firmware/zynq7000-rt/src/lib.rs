@@ -44,7 +44,28 @@
 //! target = "armv7a-none-eabihf"
 //! ```
 //!
-//! See `firmware/.cargo/config.toml` in this repository for a complete example.
+//! You can also add the following line in your `build.rs`
+//!
+//! ```rust,ignore
+//! fn main() {
+//!     // (...)
+//!     println!("cargo::rustc-link-arg=-Tz7link.x");
+//! }
+//! ```
+//!
+//! If the linker script is missing, linking fails with
+//!`undefined symbol: __zynq7000_rt_requires_z7link_x_linker_script`.
+//!
+//! ### Custom linker scripts
+//!
+//! You can use your own linker script instead of `z7link.x`. It must provide everything
+//! `aarch32-rt`'s `link.x` provides, plus the `.ocm.data` and `.ocm.bss` sections together
+//! with the symbols `zynq7000-rt` uses to initialize them. The easiest starting point is a
+//! copy of `z7link.x`. To confirm that your script meets these requirements, define the marker:
+//!
+//! ```text
+//! __zynq7000_rt_requires_z7link_x_linker_script = 1;
+//! ```
 //!
 //! ## Memory Description
 //!
@@ -157,6 +178,16 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #[cfg(all(feature = "rt", arm_profile = "a"))]
 pub use aarch32_rt::*;
+
+// in zynq7000-rt
+unsafe extern "C" {
+    #[link_name = "__zynq7000_rt_requires_z7link_x_linker_script"]
+    static Z7LINK_MARKER: u8;
+}
+
+// Keep a reference alive so the linker must resolve it.
+#[used]
+static _Z7LINK_CHECK: &u8 = unsafe { &Z7LINK_MARKER };
 
 #[cfg(all(feature = "rt", arm_profile = "a"))]
 pub mod rt;
