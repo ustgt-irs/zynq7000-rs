@@ -26,7 +26,7 @@ family of SoCs.
 - Examples: bare-metal, Embassy and dual-core (SMP).
 - Host tools:
   - [`z7-run`](./host/z7-run), a `probe-rs` based runner which initializes the PS, flashes the
-    bitstream and runs the app without `xsct` or `hw_server`.
+    bitstream, runs the app and prints its `defmt` logs, without `xsct` or `hw_server`.
   - Boot image library, `ps7_init.tcl` extractor and MMU table generator.
 - No Vitis SDK or C toolchain required to build and run software. Vivado is only needed for
   custom FPGA designs.
@@ -139,6 +139,9 @@ In a single invocation it:
 - Optionally flashes a FPGA design to the programmable logic, using
   [`x7dap`](https://github.com/adamgreig/x7dap)'s native `probe-rs` JTAG access.
 - Flashes and runs the given ELF file.
+- Reads and decodes [`defmt`](https://github.com/knurling-rs/defmt) logs over RTT if the ELF
+  contains `defmt` data. The firmware needs to use [`z7-defmt-rtt`](./firmware/z7-defmt-rtt) as
+  the `defmt` logger. Pass `--no-defmt` to disable this.
 - Optionally attaches to a serial console and prints anything the target sends.
 
 Keep in mind that this flow only supports a debug probe connected directly (via USB) to the
@@ -183,10 +186,10 @@ the example apps provided in this repo and also installs the [`z7-run`](./host/z
    ```
 
    This calls the `run` recipe in the [`justfile`](./justfile), which in turn invokes `z7-run`
-   with the `scripts/z7_run.toml` config and `scripts/init_regs.ron` regs file. You can also call
-   `z7-run` directly; run `z7-run --help` for all available options, including `--regs`,
-   `--config`, `--probe` and `--check-ddr` (a DDR read/write sanity check performed right after PS7
-   init).
+   with the `scripts/z7_run.toml` config and `scripts/zedboard_init_regs.ron` regs file. You can
+   also call `z7-run` directly; run `z7-run --help` for all available options, including `--regs`,
+   `--config`, `--probe`, `--no-defmt` and `--check-ddr` (a DDR read/write sanity check performed
+   right after PS7 init).
 
 # Flashing, running and debugging the software using a TCL script and runner
 
