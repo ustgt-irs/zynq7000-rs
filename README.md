@@ -31,6 +31,12 @@ family of SoCs.
 - No Vitis SDK or C toolchain required to build and run software. Vivado is only needed for
   custom FPGA designs.
 
+Flashing and running the `embassy-hello` example with
+[`z7-run`](#flashing-running-and-debugging-the-software-using-the-z7-run-app), including the
+FPGA bitstream and the `defmt` output:
+
+![Flashing and running embassy-hello with z7-run](./scripts/z7-run-demo.gif)
+
 # List of crates
 
 This project contains the following crates:
@@ -82,7 +88,7 @@ It also contains the following helper crates:
 - The [`z7-run`](./host/z7-run)
   tool is a native Rust flashing/debugging tool which uses `probe-rs` to talk to a JTAG debug
   probe directly, without needing `xsct` or `hw_server`. See the
-  [dedicated section below](#flashing-running-and-debugging-the-software---z7-run-app) for details.
+  [dedicated section below](#flashing-running-and-debugging-the-software-using-the-z7-run-app) for details.
 
 # Dual-core (SMP) support
 
