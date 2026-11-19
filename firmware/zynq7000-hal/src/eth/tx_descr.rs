@@ -61,6 +61,7 @@ impl<const SLOTS: usize> Default for DescriptorList<SLOTS> {
 /// Checksum generation status of a transmitted frame.
 #[bitbybit::bitenum(u3, exhaustive = true)]
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum TransmitChecksumGenerationStatus {
     /// No error.
     NoError = 0b000,
@@ -181,6 +182,7 @@ impl Default for Descriptor {
 /// TX error bits of a descriptor.
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 #[error("tx error: {self:?}")]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct TxError {
     /// Retry limit exceeded.
     pub retry_limit_exceeded: bool,

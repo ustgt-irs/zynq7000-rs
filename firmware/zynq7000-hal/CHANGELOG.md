@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## Changed
 
+- `eth::tx_descr::TxError` and `TransmitChecksumGenerationStatus` implement `defmt::Format`.
+- Removed the debug log message after the DDR IOB impedance calibration.
 - `Configurator::set_sgi_interrupt_priority`/`read_sgi_interrupt_priority` now take/return the new
   `gic::Priority` enum (`P0`..`P31`) instead of a raw `u5`.
 - Dropped the `z7-clock-calc` dependency. The clock calculators are part of the HAL again.
@@ -32,6 +34,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## Added
 
+- `defmt::Format` for `BootMode`, `BootDevice`, `i2c::Error`, `sd::SdClockConfig` and
+  `sd::SdioDivisors`. The `defmt` feature also enables `defmt` support of `embedded-hal`.
 - `mmu::l1_section` to read a section of the global L1 table.
 - Added `Configurator::set_ppi_interrupt_priority`/`read_ppi_interrupt_priority` and
   `set_spi_interrupt_priority`/`read_spi_interrupt_priority`, mirroring the existing SGI priority

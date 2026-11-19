@@ -93,7 +93,6 @@ pub fn configure_ddr_for_ddr3(
     while !ddriob_shared.read_dci_status().done() {
         aarch32_cpu::asm::nop();
     }
-    log::debug!("DDR IOB impedance calib done");
 
     // Now take the DDR out of reset.
     ddrc_regs.modify_ddrc_ctrl(|mut val| {

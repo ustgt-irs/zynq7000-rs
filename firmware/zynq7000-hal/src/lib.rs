@@ -263,6 +263,7 @@ pub fn init_secondary_core(config: SecondaryCoreConfig) -> Result<(), SecondaryC
 
 /// This enumeration encodes the various boot sources.
 #[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum BootDevice {
     /// JTAG with the PL and PS TAPs in one chain.
     JtagCascaded,
@@ -280,6 +281,7 @@ pub enum BootDevice {
 
 /// Boot mode information from the boot mode register.
 #[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct BootMode {
     boot_mode: Option<BootDevice>,
     pll_config: BootPllConfig,

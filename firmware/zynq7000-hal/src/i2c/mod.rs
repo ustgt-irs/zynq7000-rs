@@ -170,6 +170,7 @@ pub use crate::clock_calc::i2c::{
 
 /// I2C transfer error.
 #[derive(Debug, thiserror::Error)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Error {
     /// Another master won the arbitration.
     #[error("arbitration lost")]
