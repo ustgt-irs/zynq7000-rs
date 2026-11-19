@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 # [unreleased]
 
+## Added
+
+- `defmt` feature, which implements `defmt::Format` for the QSPI flash registers and ID types.
+
 # [v0.2.0] 2026-08-20
 
 ## Fixed
