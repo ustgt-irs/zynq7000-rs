@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   registers the GPIO interrupt handler by default.
 - `mmu::mmu_l1_table_mut` and `L1TableWrapper` are replaced by `mmu::update_l1_table`. Two calls of
   `mmu_l1_table_mut` returned aliasing mutable references to the global L1 table.
+- `sd::commands::ACMD41_SEND_IF_COND` is renamed to `ACMD41_SD_SEND_OP_COND`.
+- Removed the unused `eth::tx_descr::IncrementResult`.
 
 ## Added
 
