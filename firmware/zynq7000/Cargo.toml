@@ -14,8 +14,6 @@ derive-mmio = { version = "0.8", default-features = false }
 bitbybit = "2"
 arbitrary-int = "2"
 rustversion = "1"
-thiserror = { version = "2", default-features = false }
-once_cell = { version = "1", default-features = false, features = ["critical-section"] }
 defmt = { version = "1", optional = true }
 
 [features]
