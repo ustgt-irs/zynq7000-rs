@@ -268,7 +268,7 @@ async fn main(spawner: Spawner) -> ! {
 
     zynq7000_hal::register_interrupt(
         Interrupt::Spi(zynq7000_hal::gic::SpiInterrupt::Eth0),
-        custom_eth_interupt_handler,
+        custom_eth_interrupt_handler,
     );
 
     // Unwrap okay, we use a standard clock config, and the clock config should never fail.
@@ -458,7 +458,7 @@ async fn main(spawner: Spawner) -> ! {
 }
 
 // Safety: Only called by interrupt handler, registered in global interrupt handler map.
-unsafe fn custom_eth_interupt_handler() {
+unsafe fn custom_eth_interrupt_handler() {
     // This generic library provided interrupt handler takes care of waking
     // the driver on received or sent frames while also reporting anomalies
     // and errors.

@@ -520,7 +520,7 @@ impl Configurator {
     /// interrupts.
     ///
     /// With a few exeception, the GIC expects software to set up the sensitivities
-    /// to fixed values. The only exceptions are the interupts coming from the programmable
+    /// to fixed values. The only exceptions are the interrupts coming from the programmable
     /// logic. These are configured to high level sensitivity by this function.
     /// If you need a different sensitivity, you need to update the bits using the
     /// [Self::set_pl_interrupt_sensitivity] function.

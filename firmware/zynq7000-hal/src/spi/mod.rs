@@ -743,7 +743,7 @@ impl SpiLowLevel {
     /// in SPI master mode.
     #[inline]
     pub fn disable_interrupts_master_mode(&mut self) {
-        self.regs.write_interupt_disable(
+        self.regs.write_interrupt_disable(
             InterruptControl::builder()
                 .with_tx_underflow(true)
                 .with_rx_full(true)

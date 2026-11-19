@@ -316,7 +316,7 @@ pub struct Registers {
     interrupt_disable: InterruptControl,
     /// Interrupt mask register.
     #[mmio(PureRead)]
-    interupt_mask: InterruptMask,
+    interrupt_mask: InterruptMask,
     /// SPI enable register.
     spi_enable: SpiEnable,
     /// Delay register.
