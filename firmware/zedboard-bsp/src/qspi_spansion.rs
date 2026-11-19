@@ -50,6 +50,7 @@ pub enum RegisterId {
 }
 
 #[derive(Debug, Clone, Copy, num_enum::TryFromPrimitive)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
 pub enum MemoryInterfaceType {
     _128Mb = 0x20,
@@ -57,6 +58,7 @@ pub enum MemoryInterfaceType {
 }
 
 #[derive(Debug, Clone, Copy, num_enum::TryFromPrimitive)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
 pub enum Density {
     _128Mb = 0x18,
@@ -64,6 +66,7 @@ pub enum Density {
 }
 
 #[derive(Debug, Clone, Copy, num_enum::TryFromPrimitive)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
 pub enum SectorArchictecture {
     /// Uniform 256 kB sectors.
@@ -168,7 +171,7 @@ impl ExtendedDeviceId {
     }
 }
 
-#[bitbybit::bitfield(u8, debug, forbid_overlaps)]
+#[bitbybit::bitfield(u8, debug, forbid_overlaps, defmt_fields(feature = "defmt"))]
 pub struct StatusRegister1 {
     #[bit(7, rw)]
     status_register_write_disable: bool,
@@ -184,7 +187,7 @@ pub struct StatusRegister1 {
     write_in_progress: bool,
 }
 
-#[bitbybit::bitfield(u8, debug, forbid_overlaps)]
+#[bitbybit::bitfield(u8, debug, forbid_overlaps, defmt_fields(feature = "defmt"))]
 pub struct ConfigRegister1 {
     #[bits(6..=7, rw)]
     latency_code: u2,

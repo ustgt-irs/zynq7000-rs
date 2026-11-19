@@ -335,6 +335,7 @@ impl SdioRegisters for zynq7000::sdio::MmioRegisters<'static> {
 
 /// SD clock divisors for the initialization and the data transfer phase.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct SdioDivisors {
     /// Divisor which will be used during the initialization phase when ACMD41 is issued.
     ///
@@ -377,6 +378,7 @@ impl SdioDivisors {
 
 /// SDIO clock configuration.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct SdClockConfig {
     /// Selects the source clock for the SDIO peripheral reference clock.
     pub src_sel: SrcSelIo,

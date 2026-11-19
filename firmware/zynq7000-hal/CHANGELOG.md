@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## Added
 
+- `defmt::Format` for `BootMode`, `BootDevice`, `i2c::Error`, `sd::SdClockConfig` and
+  `sd::SdioDivisors`. The `defmt` feature also enables `defmt` support of `embedded-hal`.
 - `mmu::l1_section` to read a section of the global L1 table.
 - Added `Configurator::set_ppi_interrupt_priority`/`read_ppi_interrupt_priority` and
   `set_spi_interrupt_priority`/`read_spi_interrupt_priority`, mirroring the existing SGI priority
