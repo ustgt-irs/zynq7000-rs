@@ -20,13 +20,11 @@ use embassy_executor::Spawner;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use embassy_time::{Duration, Ticker, Timer};
 use embedded_hal::digital::OutputPin;
-use log::{error, info};
+use z7_defmt_rtt as _;
 use zedboard::PS_CLOCK_FREQUENCY;
-use zynq7000_hal::{BootMode, clocks, generic_interrupt_handler, gpio, gtc, uart};
+use zynq7000_hal::{BootMode, clocks, generic_interrupt_handler, gpio, gtc};
 
 use zynq7000_rt as _;
-
-const INIT_STRING: &str = "-- Zynq 7000 Zedboard asynchronous buttons example --\n\r";
 
 const AXI_GPIO_BASE_ADDR: u32 = 0x4120_0000;
 
@@ -68,22 +66,10 @@ async fn main(spawner: Spawner) -> ! {
     let gtc = gtc::GlobalTimerCounter::new(periphs.gtc, clocks.arm_clocks());
     zynq7000_hal::time_driver_gtc::init(clocks.arm_clocks(), gtc);
 
-    // Set up the UART, we are logging with it.
-    let uart_clk_config = uart::ClockConfig::new_autocalc_with_error(clocks.io_clocks(), 115200)
-        .unwrap()
-        .0;
-    let mut uart = uart::Uart::new_with_mio_for_uart_1(
-        periphs.uart_1,
-        uart::Config::new_with_clk_config(uart_clk_config),
-        (gpio_pins.mio.mio48, gpio_pins.mio.mio49),
-    )
-    .unwrap();
-    uart.write_all(INIT_STRING.as_bytes());
-
-    zynq7000_hal::log::uart_blocking::init_with_busy_flag(uart, log::LevelFilter::Trace, false);
+    defmt::println!("-- Zynq 7000 Zedboard asynchronous buttons example --");
 
     let boot_mode = BootMode::new_from_regs();
-    info!("Boot mode: {:?}", boot_mode);
+    defmt::info!("Boot mode: {:?}", boot_mode);
 
     let mut button = |offset| {
         gpio::Input::new_for_emio(gpio_pins.emio.take(offset).unwrap())
@@ -135,7 +121,7 @@ async fn toggle_on_press_task(mut button: gpio::asynch::Input, mut led: gpio::Ou
     loop {
         button.wait_for_rising_edge().await;
         led.toggle();
-        info!("BTNC pressed, toggled LD0");
+        defmt::info!("BTNC pressed, toggled LD0");
         debounce().await;
         button.wait_for_low().await;
         debounce().await;
@@ -149,7 +135,7 @@ async fn toggle_on_release_task(mut button: gpio::asynch::Input, mut led: gpio::
         debounce().await;
         button.wait_for_falling_edge().await;
         led.toggle();
-        info!("BTNL released, toggled LD1");
+        defmt::info!("BTNL released, toggled LD1");
         debounce().await;
     }
 }
@@ -159,11 +145,11 @@ async fn on_while_pressed_task(mut button: gpio::asynch::Input, mut led: gpio::O
     loop {
         button.wait_for_high().await;
         led.set_high();
-        info!("BTNR pressed, LD2 on");
+        defmt::info!("BTNR pressed, LD2 on");
         debounce().await;
         button.wait_for_low().await;
         led.set_low();
-        info!("BTNR released, LD2 off");
+        defmt::info!("BTNR released, LD2 off");
         debounce().await;
     }
 }
@@ -203,7 +189,7 @@ async fn counter_task(mut emio_leds: [gpio::Output; 2], mut axi_gpio_leds: [axi_
             CounterEvent::Up => (count + 1) % 16,
             CounterEvent::Down => (count + 15) % 16,
         };
-        info!("Counter: {count}");
+        defmt::info!("Counter: {}", count);
         let bit = |n: u8| gpio::PinState::from(count & (1 << n) != 0);
         emio_leds[0].set_state(bit(0)).unwrap();
         emio_leds[1].set_state(bit(1)).unwrap();
@@ -245,6 +231,6 @@ fn prefetch_handler(_faulting_addr: usize) -> ! {
 /// Panic handler
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    error!("Panic: {info:?}");
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {}
 }

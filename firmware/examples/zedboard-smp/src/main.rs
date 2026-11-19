@@ -9,21 +9,13 @@
 use core::cell::RefCell;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use critical_section::Mutex;
-use log::{error, info, warn};
+use z7_defmt_rtt as _;
 use zedboard_smp as _;
-use zynq7000_hal::{
-    BootMode,
-    clocks::Clocks,
-    gpio,
-    priv_tim::CpuPrivateTimer,
-    uart::{ClockConfig, Config, Uart},
-};
+use zynq7000_hal::{BootMode, clocks::Clocks, gpio, priv_tim::CpuPrivateTimer};
 
 use zynq7000_rt as _;
 
 use zedboard_smp::{Handoff, PS_CLOCK_FREQUENCY};
-
-const INIT_STRING: &str = "-- Zynq 7000 Zedboard bare-metal SMP example --\n\r";
 
 // --- CPU1 boot handshake ---
 
@@ -74,9 +66,14 @@ fn run_shared_workload() {
 /// Logs whether `actual == expected` under `name`.
 fn report_result(name: &str, actual: u32, expected: u32) {
     if actual == expected {
-        info!("{name} test passed");
+        defmt::info!("{} test passed", name);
     } else {
-        warn!("{name} test failed: got {actual}, expected {expected}");
+        defmt::warn!(
+            "{} test failed: got {}, expected {}",
+            name,
+            actual,
+            expected
+        );
     }
 }
 
@@ -99,20 +96,10 @@ fn main() -> ! {
     });
     EMIO_LEDS.put(emio_leds);
 
-    let uart_clk_config = ClockConfig::new_autocalc_with_error(clocks.io_clocks(), 115200)
-        .unwrap()
-        .0;
-    let mut log_uart = Uart::new_with_mio_for_uart_1(
-        periphs.uart_1,
-        Config::new_with_clk_config(uart_clk_config),
-        (gpio_pins.mio.mio48, gpio_pins.mio.mio49),
-    )
-    .unwrap();
-    log_uart.write_all(INIT_STRING.as_bytes());
-    zynq7000_hal::log::uart_blocking::init_with_busy_flag(log_uart, log::LevelFilter::Trace, false);
+    defmt::println!("-- Zynq 7000 Zedboard bare-metal SMP example --");
 
     let boot_mode = BootMode::new_from_regs();
-    info!("Boot mode: {:?}", boot_mode);
+    defmt::info!("Boot mode: {:?}", boot_mode);
 
     let mut priv_tim = CpuPrivateTimer::take(clocks.arm_clocks()).unwrap();
 
@@ -128,7 +115,7 @@ fn main() -> ! {
         priv_tim.delay_ms(CORE1_BOOT_ATTEMPT_DELAY_MS);
     }
     if !booted {
-        error!("CPU1 did not boot in time");
+        defmt::error!("CPU1 did not boot in time");
     }
 
     run_shared_workload();

@@ -3,23 +3,19 @@
 //! CPU0 blinks a MIO LED and sends its state to CPU1 over a cross-core `embassy_sync::Signal`,
 //! which mirrors it on an EMIO LED. CPU1 also runs its own heartbeat task using
 //! `embassy_time::Timer`, entirely independently of CPU0, to exercise the GTC time driver's
-//! per-core alarm state. Both cores log through the async UART logger, which CPU0 drains in
-//! its own task.
+//! per-core alarm state. Both cores log with defmt.
 #![no_std]
 #![no_main]
 
 use embassy_executor::Executor;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::{Duration, Ticker};
-use embedded_io::Write as _;
-use log::info;
 use static_cell::StaticCell;
+use z7_defmt_rtt as _;
 use zedboard_smp::{Handoff, PS_CLOCK_FREQUENCY};
-use zynq7000_hal::{BootMode, clocks::Clocks, gpio, gtc, log::LevelFilter, uart};
+use zynq7000_hal::{BootMode, clocks::Clocks, gpio, gtc};
 
 use zynq7000_rt as _;
-
-const INIT_STRING: &str = "-- Zynq 7000 Zedboard Embassy SMP example --\n\r";
 
 /// Carries CPU0's LED state to CPU1's LED task. Only the latest state matters, so a `Signal`
 /// fits better than a `Channel`. Sharing this between two independently-running executors is
@@ -55,30 +51,10 @@ fn main() -> ! {
     let emio_led = gpio::Output::new_for_emio(gpio_pins.emio.take(0).unwrap(), gpio::PinState::Low);
     EMIO_LED.put(emio_led);
 
-    let uart_clk_config = uart::ClockConfig::new_autocalc_with_error(clocks.io_clocks(), 115200)
-        .unwrap()
-        .0;
-    let mut uart = uart::Uart::new_with_mio_for_uart_1(
-        periphs.uart_1,
-        uart::Config::new_with_clk_config(uart_clk_config),
-        (gpio_pins.mio.mio48, gpio_pins.mio.mio49),
-    )
-    .unwrap();
-    uart.write_all(INIT_STRING.as_bytes());
-    uart.flush();
-
-    // Async logger: log calls append to a pipe under a critical section (a real cross-core
-    // spinlock), so both cores can log through it. `log_task` below drains the pipe over the
-    // UART on core0.
-    let (tx, _rx) = uart.split();
-    let log_runner = zynq7000_hal::log::asynch::init_with_uart_tx(
-        LevelFilter::Trace,
-        uart::TxAsync::new(tx, true),
-    )
-    .unwrap();
+    defmt::println!("-- Zynq 7000 Zedboard Embassy SMP example --");
 
     let boot_mode = BootMode::new_from_regs();
-    info!("Boot mode: {:?}", boot_mode);
+    defmt::info!("Boot mode: {:?}", boot_mode);
 
     // Everything above touches SLCR/GPIO config, and we want to keep that on core0.
     zynq7000_rt::smp::start_core1();
@@ -86,7 +62,6 @@ fn main() -> ! {
     let executor0 = EXECUTOR0.init(Executor::new());
     executor0.run(|spawner| {
         spawner.spawn(core0_task(mio_led).unwrap());
-        spawner.spawn(log_task(log_runner).unwrap());
     });
 }
 
@@ -96,17 +71,11 @@ async fn core0_task(mut led: gpio::Output) -> ! {
     let mut count = 0;
     loop {
         led.toggle();
-        info!("CPU0 heartbeat: {}", count);
+        defmt::info!("CPU0 heartbeat: {}", count);
         count += 1;
         LED_SIGNAL.signal(led.is_set_high());
         ticker.next().await;
     }
-}
-
-/// Drains the log pipe and writes it out over the UART.
-#[embassy_executor::task]
-async fn log_task(mut runner: zynq7000_hal::log::asynch::UartLoggerRunner) -> ! {
-    runner.run().await
 }
 
 /// Entry point on CPU1, called by `zynq7000-rt`'s start-up code once CPU0 has released it via
@@ -141,7 +110,7 @@ async fn core1_heartbeat_task() -> ! {
     let mut ticker = Ticker::every(Duration::from_secs(1));
     let mut count = 0u32;
     loop {
-        info!("CPU1 heartbeat: {count}");
+        defmt::info!("CPU1 heartbeat: {}", count);
         count += 1;
         ticker.next().await;
     }

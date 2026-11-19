@@ -53,9 +53,19 @@ impl SmoltcpRxToken<'_> {
             .expect("RX buffer or buffer size not aligned to cache line size");
 
         #[cfg(feature = "eth-packet-trace")]
-        log::debug!("eth rx {} bytes", self.rx_size);
-        #[cfg(feature = "eth-packet-trace")]
-        log::trace!("rx data: {:x?}", &self.rx_buf.0[0..self.rx_size]);
+        {
+            let data = &self.rx_buf.0[0..self.rx_size];
+            #[cfg(feature = "defmt")]
+            {
+                defmt::debug!("eth rx {} bytes", self.rx_size);
+                defmt::trace!("rx data: {:x}", data);
+            }
+            #[cfg(not(feature = "defmt"))]
+            {
+                log::debug!("eth rx {} bytes", self.rx_size);
+                log::trace!("rx data: {:x?}", data);
+            }
+        }
         let result = f(&mut self.rx_buf.0[0..self.rx_size]);
         self.descr_list.clear_slot(self.slot_index);
 
@@ -109,9 +119,19 @@ impl SmoltcpTxToken<'_> {
             .expect("TX buffer or buffer size not aligned to cache line size");
 
         #[cfg(feature = "eth-packet-trace")]
-        log::debug!("eth tx {len} bytes");
-        #[cfg(feature = "eth-packet-trace")]
-        log::trace!("tx data: {:x?}", &buffer.0[0..len]);
+        {
+            let data = &buffer.0[0..len];
+            #[cfg(feature = "defmt")]
+            {
+                defmt::debug!("eth tx {} bytes", len);
+                defmt::trace!("tx data: {:x}", data);
+            }
+            #[cfg(not(feature = "defmt"))]
+            {
+                log::debug!("eth tx {} bytes", len);
+                log::trace!("tx data: {:x?}", data);
+            }
+        }
         self.descr_list
             .prepare_transfer_unchecked(Some(addr), u14::new(len as u16), true, false);
         // SAFETY: Only the start TX bit is set.
@@ -236,10 +256,16 @@ impl CommonSmoltcpDriver {
                             && cksum_error
                                 != tx_descr::TransmitChecksumGenerationStatus::NotVlanOrSnapOrIp
                         {
-                            log::warn!("TX checksum generation error: {tx_error:?}");
+                            #[cfg(feature = "defmt")]
+                            defmt::warn!("TX checksum generation error: {:?}", tx_error);
+                            #[cfg(not(feature = "defmt"))]
+                            log::warn!("TX checksum generation error: {:?}", tx_error);
                         }
                     } else {
-                        log::warn!("TX error: {tx_error:?}");
+                        #[cfg(feature = "defmt")]
+                        defmt::warn!("TX error: {:?}", tx_error);
+                        #[cfg(not(feature = "defmt"))]
+                        log::warn!("TX error: {:?}", tx_error);
                     }
                 }
                 tx_descr::BusyHandlingResult::SlotHandled(_) => (),
@@ -253,6 +279,9 @@ impl CommonSmoltcpDriver {
         if self.bufs.tx_descr.full() {
             // TODO: When introducing an abstraction for notifying the user, send a message
             // for this case.
+            #[cfg(feature = "defmt")]
+            defmt::warn!("TX descriptor queue is full");
+            #[cfg(not(feature = "defmt"))]
             log::warn!("TX descriptor queue is full");
             return None;
         }
@@ -264,7 +293,13 @@ impl CommonSmoltcpDriver {
                 size,
                 status: _status,
             } => {
-                #[cfg(feature = "eth-packet-trace")]
+                #[cfg(all(feature = "eth-packet-trace", feature = "defmt"))]
+                defmt::trace!(
+                    "eth rx frame, fsc status {:?}, cksum status {:?}",
+                    _status.fcs_status(),
+                    _status.type_id_match_info_or_chksum_status()
+                );
+                #[cfg(all(feature = "eth-packet-trace", not(feature = "defmt")))]
                 log::trace!(
                     "eth rx frame, fsc status {:?}, cksum status {:?}",
                     _status.fcs_status(),
@@ -306,6 +341,9 @@ impl CommonSmoltcpDriver {
         if self.bufs.tx_descr.full() {
             // TODO: When introducing an abstraction for notifying the user, send a message
             // for this case.
+            #[cfg(feature = "defmt")]
+            defmt::warn!("TX descriptor queue is full");
+            #[cfg(not(feature = "defmt"))]
             log::warn!("TX descriptor queue is full");
             return None;
         }

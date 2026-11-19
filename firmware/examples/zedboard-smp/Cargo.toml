@@ -13,9 +13,10 @@ categories = ["embedded", "no-std", "hardware-support"]
 # not just IRQ-disable.
 aarch32-cpu = { version = "0.4", features = ["critical-section-multi-core"] }
 zynq7000-rt = { path = "../../zynq7000-rt" }
-zynq7000-hal = { path = "../../zynq7000-hal", features = ["time-driver-gtc"] }
+zynq7000-hal = { path = "../../zynq7000-hal", features = ["time-driver-gtc", "defmt"] }
+z7-defmt-rtt = { path = "../../z7-defmt-rtt" }
+defmt = "1"
 critical-section = "1"
-log = "0.4"
 static_cell = "2"
 embassy-sync = "0.8"
 embedded-io = "0.7"

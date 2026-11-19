@@ -12,15 +12,13 @@ use aarch32_cpu::asm::nop;
 use core::panic::PanicInfo;
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Ticker};
-use log::{error, info};
+use z7_defmt_rtt as _;
 use zedboard::PS_CLOCK_FREQUENCY;
 use zynq7000_hal::{
-    BootMode, Interrupt, SpiInterrupt, clocks, generic_interrupt_handler, gpio, gtc, uart,
+    BootMode, Interrupt, SpiInterrupt, clocks, generic_interrupt_handler, gpio, gtc,
 };
 
 use zynq7000_rt as _;
-
-const INIT_STRING: &str = "-- Zynq 7000 Zedboard AXI GPIO async example --\n\r";
 
 const AXI_GPIO_BASE_ADDR: u32 = 0x4120_0000;
 const AXI_GPIO_INTERRUPT: SpiInterrupt = SpiInterrupt::Pl4;
@@ -41,28 +39,14 @@ async fn main(spawner: Spawner) -> ! {
     // Clock was already initialized by PS7 Init TCL script or FSBL, we just read it.
     let clocks = clocks::Clocks::new_from_regs(PS_CLOCK_FREQUENCY).unwrap();
 
-    let gpio_pins = gpio::Pins::new(periphs.gpio, gpio::Config::default());
-
     // Set up global timer counter and embassy time driver.
     let gtc = gtc::GlobalTimerCounter::new(periphs.gtc, clocks.arm_clocks());
     zynq7000_hal::time_driver_gtc::init(clocks.arm_clocks(), gtc);
 
-    // Set up the UART, we are logging with it.
-    let uart_clk_config = uart::ClockConfig::new_autocalc_with_error(clocks.io_clocks(), 115200)
-        .unwrap()
-        .0;
-    let mut uart = uart::Uart::new_with_mio_for_uart_1(
-        periphs.uart_1,
-        uart::Config::new_with_clk_config(uart_clk_config),
-        (gpio_pins.mio.mio48, gpio_pins.mio.mio49),
-    )
-    .unwrap();
-    uart.write_all(INIT_STRING.as_bytes());
-
-    zynq7000_hal::log::uart_blocking::init_with_busy_flag(uart, log::LevelFilter::Trace, false);
+    defmt::println!("-- Zynq 7000 Zedboard AXI GPIO async example --");
 
     let boot_mode = BootMode::new_from_regs();
-    info!("Boot mode: {:?}", boot_mode);
+    defmt::info!("Boot mode: {:?}", boot_mode);
 
     // Channel 1 drives LD6/LD7, channel 2 reads SW7, see zedboard-gateware/README.md's board
     // resource table.
@@ -91,10 +75,10 @@ async fn main(spawner: Spawner) -> ! {
         .expect("initializing channel 2 token failed");
     axi_gpio.enable_global_interrupt();
 
-    info!("Waiting for channel 2 events (toggle SW7)...");
+    defmt::info!("Waiting for channel 2 events (toggle SW7)...");
     loop {
         let snapshot = channel2_events.wait().await;
-        info!("channel 2 event, SW7 = {}", snapshot.pins(0));
+        defmt::info!("channel 2 event, SW7 = {}", snapshot.pins(0));
     }
 }
 
@@ -149,6 +133,6 @@ fn prefetch_handler(_faulting_addr: usize) -> ! {
 /// Panic handler
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    error!("Panic: {info:?}");
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {}
 }

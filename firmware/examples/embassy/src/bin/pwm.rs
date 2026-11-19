@@ -13,14 +13,9 @@ use embassy_executor::Spawner;
 use embassy_time::{Duration, Ticker};
 use embedded_hal::pwm::SetDutyCycle;
 use fugit::RateExtU32;
-use log::{error, info};
+use z7_defmt_rtt as _;
 use zynq7000_hal::{
-    BootMode,
-    clocks::Clocks,
-    generic_interrupt_handler, gpio,
-    gtc::GlobalTimerCounter,
-    time::Hertz,
-    uart::{ClockConfig, Config, Uart},
+    BootMode, clocks::Clocks, generic_interrupt_handler, gpio, gtc::GlobalTimerCounter, time::Hertz,
 };
 
 use zynq7000_rt as _;
@@ -53,22 +48,10 @@ async fn main(_spawner: Spawner) -> ! {
             .unwrap();
     pwm.set_duty_cycle_percent(50).unwrap();
 
-    // Set up the UART, we are logging with it.
-    let uart_clk_config = ClockConfig::new_autocalc_with_error(clocks.io_clocks(), 115200)
-        .unwrap()
-        .0;
-    let mut uart = Uart::new_with_mio_for_uart_1(
-        periphs.uart_1,
-        Config::new_with_clk_config(uart_clk_config),
-        (mio_pins.mio48, mio_pins.mio49),
-    )
-    .unwrap();
-    uart.write_all(b"-- Zynq 7000 PWM example--\n\r");
-    // Safety: We are not multi-threaded yet.
-    zynq7000_hal::log::uart_blocking::init_with_busy_flag(uart, log::LevelFilter::Trace, false);
+    defmt::println!("-- Zynq 7000 PWM example --");
 
     let boot_mode = BootMode::new_from_regs();
-    info!("Boot mode: {:?}", boot_mode);
+    defmt::info!("Boot mode: {:?}", boot_mode);
 
     let mut ticker = Ticker::every(Duration::from_millis(1000));
     let mut led = gpio::Output::new_for_mio(mio_pins.mio7, gpio::PinState::Low);
@@ -77,7 +60,7 @@ async fn main(_spawner: Spawner) -> ! {
         led.toggle();
 
         pwm.set_duty_cycle_percent(current_duty).unwrap();
-        info!("Setting duty cycle to {current_duty}%");
+        defmt::info!("Setting duty cycle to {}%", current_duty);
         current_duty += 5;
         if current_duty > 100 {
             current_duty = 0;
@@ -120,6 +103,6 @@ fn prefetch_handler(_faulting_addr: usize) -> ! {
 /// Panic handler
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    error!("Panic: {info:?}");
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {}
 }

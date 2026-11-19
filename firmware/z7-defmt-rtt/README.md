@@ -29,7 +29,7 @@ The application also needs a `critical-section` implementation, for example the
 `critical-section-single-core` feature of `aarch32-cpu`.
 
 The `memory.x` of the application needs an `OCM` region. The
-[defmt example](../examples/defmt/memory.x) can be used as a template.
+[zedboard examples](../examples/zedboard/memory.x) can be used as a template.
 
 The cache maintenance only covers the L1 cache. This relies on the default MMU table of the
 `zynq7000-hal`, which maps OCM as outer non-cacheable. The crate does not work together with the

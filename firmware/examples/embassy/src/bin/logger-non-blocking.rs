@@ -1,4 +1,5 @@
-//! Example which uses the UART1 to send log messages.
+//! Example which sends log messages over UART1 with the non-blocking `log` logger, and over RTT
+//! with `defmt`.
 #![no_std]
 #![no_main]
 
@@ -8,6 +9,7 @@ use embassy_executor::Spawner;
 use embassy_time::{Duration, Ticker};
 use embedded_io::Write;
 use log::info;
+use z7_defmt_rtt as _;
 use zynq7000_hal::{
     BootMode,
     clocks::Clocks,
@@ -51,6 +53,7 @@ async fn main(spawner: Spawner) -> ! {
     )
     .unwrap();
     uart.write_all(b"-- Zynq 7000 Logging example --\n\r");
+    defmt::println!("-- Zynq 7000 Logging example --");
     uart.flush().unwrap();
 
     let (tx, _rx) = uart.split();
@@ -77,10 +80,9 @@ async fn led_task(mut mio_led: gpio::Output) {
     let mut ticker = Ticker::every(Duration::from_millis(1000));
     loop {
         mio_led.toggle();
-        info!(
-            "Toggling LED ({})",
-            ATOMIC_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed)
-        );
+        let count = ATOMIC_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        info!("Toggling LED ({})", count);
+        defmt::info!("Toggling LED ({})", count);
         ticker.next().await;
     }
 }
@@ -134,5 +136,6 @@ fn prefetch_handler(_faulting_addr: usize) -> ! {
 fn panic(info: &PanicInfo) -> ! {
     let mut uart = unsafe { uart::Uart::steal(uart::UartId::Uart1) };
     writeln!(uart, "panic: {}\r", info).ok();
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {}
 }

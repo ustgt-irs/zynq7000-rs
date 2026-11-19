@@ -7,14 +7,9 @@ use core::panic::PanicInfo;
 use embassy_executor::Spawner;
 use embassy_time::{Delay, Duration, Ticker};
 use embedded_hal::delay::DelayNs;
-use log::{error, info, warn};
+use z7_defmt_rtt as _;
 use zynq7000_hal::{
-    BootMode,
-    clocks::Clocks,
-    generic_interrupt_handler, gpio,
-    gtc::GlobalTimerCounter,
-    time::Hertz,
-    uart::{ClockConfig, Config, Uart},
+    BootMode, clocks::Clocks, generic_interrupt_handler, gpio, gtc::GlobalTimerCounter, time::Hertz,
 };
 
 // Define the clock frequency as a constant
@@ -44,20 +39,7 @@ async fn main(_spawner: Spawner) -> ! {
     let gtc = GlobalTimerCounter::new(periphs.gtc, clocks.arm_clocks());
     zynq7000_hal::time_driver_gtc::init(clocks.arm_clocks(), gtc);
 
-    // Set up the UART, we are logging with it.
-    let uart_clk_config = ClockConfig::new_autocalc_with_error(clocks.io_clocks(), 115200)
-        .unwrap()
-        .0;
-    let mut uart = Uart::new_with_mio_for_uart_1(
-        periphs.uart_1,
-        Config::new_with_clk_config(uart_clk_config),
-        (mio_pins.mio48, mio_pins.mio49),
-    )
-    .unwrap();
-    uart.write_all(b"-- Zynq 7000 DHT22 --\n\r");
-
-    // Safety: We are not multi-threaded yet.
-    zynq7000_hal::log::uart_blocking::init_with_busy_flag(uart, log::LevelFilter::Trace, false);
+    defmt::println!("-- Zynq 7000 DHT22 --");
 
     let mut delay = Delay;
 
@@ -70,50 +52,50 @@ async fn main(_spawner: Spawner) -> ! {
         let mut flex_pin_1 = gpio::Flex::new_for_mio(mio_pins.mio14);
         flex_pin_1.configure_as_input_floating().unwrap();
         // Should be high because of pull up.
-        info!(
+        defmt::info!(
             "Flex Pin 1 state (should be high): {}",
             flex_pin_1.is_high()
         );
-        info!(
+        defmt::info!(
             "Flex Pin 0 state (should be high): {}",
             flex_pin_0.is_high()
         );
         flex_pin_0.set_low();
-        info!("Flex Pin 1 state (should be low): {}", flex_pin_1.is_high());
-        info!("Flex Pin 0 state (should be low): {}", flex_pin_0.is_high());
+        defmt::info!("Flex Pin 1 state (should be low): {}", flex_pin_1.is_high());
+        defmt::info!("Flex Pin 0 state (should be low): {}", flex_pin_0.is_high());
         flex_pin_0.set_high();
         delay.delay_us(5);
-        info!(
+        defmt::info!(
             "Flex Pin 1 state (should be high): {}",
             flex_pin_1.is_high()
         );
-        info!(
+        defmt::info!(
             "Flex Pin 0 state (should be high): {}",
             flex_pin_0.is_high()
         );
 
         flex_pin_1.configure_as_output_open_drain(gpio::PinState::Low, true);
-        info!("Flex Pin 1 state (should be low): {}", flex_pin_1.is_high());
-        info!("Flex Pin 0 state (should be low): {}", flex_pin_0.is_high());
+        defmt::info!("Flex Pin 1 state (should be low): {}", flex_pin_1.is_high());
+        defmt::info!("Flex Pin 0 state (should be low): {}", flex_pin_0.is_high());
 
         flex_pin_1.set_high();
         delay.delay_us(5);
-        info!(
+        defmt::info!(
             "Flex Pin 1 state (should be high): {}",
             flex_pin_1.is_high()
         );
-        info!(
+        defmt::info!(
             "Flex Pin 0 state (should be high): {}",
             flex_pin_0.is_high()
         );
 
         flex_pin_1.set_low();
-        info!("Flex Pin 1 state (should be low): {}", flex_pin_1.is_high());
-        info!("Flex Pin 0 state (should be low): {}", flex_pin_0.is_high());
+        defmt::info!("Flex Pin 1 state (should be low): {}", flex_pin_1.is_high());
+        defmt::info!("Flex Pin 0 state (should be low): {}", flex_pin_0.is_high());
     }
 
     let boot_mode = BootMode::new_from_regs();
-    info!("Boot mode: {:?}", boot_mode);
+    defmt::info!("Boot mode: {:?}", boot_mode);
 
     let mut ticker = Ticker::every(Duration::from_millis(1000));
     let mut led = gpio::Output::new_for_mio(mio_pins.mio7, gpio::PinState::Low);
@@ -122,11 +104,12 @@ async fn main(_spawner: Spawner) -> ! {
             let result = dht_sensor::dht22::r#async::read(&mut delay, &mut one_wire_pin).await;
             match result {
                 Ok(reading) => {
-                    info!("Temperature: {} C", reading.temperature);
-                    info!("Humidity: {} %", reading.relative_humidity);
+                    defmt::info!("Temperature: {} C", reading.temperature);
+                    defmt::info!("Humidity: {} %", reading.relative_humidity);
                 }
                 Err(err) => {
-                    warn!("Reading error: {err:?}");
+                    // The DHT sensor crate has no defmt support.
+                    defmt::warn!("Reading error: {:?}", defmt::Debug2Format(&err));
                 }
             }
         }
@@ -169,6 +152,6 @@ fn prefetch_handler(_faulting_addr: usize) -> ! {
 /// Panic handler
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    error!("Panic: {info:?}");
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {}
 }

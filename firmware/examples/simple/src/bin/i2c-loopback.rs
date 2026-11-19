@@ -52,8 +52,7 @@ fn main() -> ! {
     defmt::println!("-- Zynq 7000 I2C loopback example --");
 
     let boot_mode = BootMode::new_from_regs();
-    // `BootMode` does not implement `defmt::Format`.
-    defmt::info!("Boot mode: {:?}", defmt::Debug2Format(&boot_mode));
+    defmt::info!("Boot mode: {:?}", boot_mode);
 
     i2c::enable_i2c0_to_i2c1_loopback();
 
@@ -311,11 +310,8 @@ enum Failure {
 impl defmt::Format for Failure {
     fn format(&self, f: defmt::Formatter) {
         match self {
-            // The I2C error does not implement `defmt::Format`.
-            Failure::Bus(e) => defmt::write!(f, "{:?}", defmt::Debug2Format(e)),
-            Failure::Unexpected(result) => {
-                defmt::write!(f, "unexpected result {:?}", defmt::Debug2Format(result))
-            }
+            Failure::Bus(e) => defmt::write!(f, "{:?}", e),
+            Failure::Unexpected(result) => defmt::write!(f, "unexpected result {:?}", result),
             Failure::DataMismatch {
                 offset,
                 read,

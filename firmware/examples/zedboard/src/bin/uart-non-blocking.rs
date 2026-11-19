@@ -20,7 +20,7 @@
 //! This example runs one embassy task for each UART, which periodically sends variable sized
 //! string content out via its TX port. Each UART peripheral also permanently listens to all
 //! incoming RX data via interrupts. Received data will be sent from the interrupt handler
-//! to the main thread and will be printed to the main console on UART 1.
+//! to the main thread and will be printed with defmt.
 #![no_std]
 #![no_main]
 extern crate alloc;
@@ -35,8 +35,7 @@ use embassy_executor::Spawner;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pipe::Pipe};
 use embassy_time::{Duration, Ticker};
 use embedded_alloc::LlffHeap as Heap;
-use embedded_io::Write as _;
-use log::{info, warn};
+use z7_defmt_rtt as _;
 use zynq7000_hal::{
     BootMode,
     clocks::Clocks,
@@ -45,7 +44,7 @@ use zynq7000_hal::{
     gpio,
     gtc::GlobalTimerCounter,
     time::Hertz,
-    uart::{self, ClockConfig, Config, Uart},
+    uart::{ClockConfig, Config, Uart},
 };
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -56,7 +55,6 @@ pub enum UartMode {
 }
 
 const UART_MODE: UartMode = UartMode::Uart0ToUart16550;
-const INIT_STRING: &str = "-- Zynq 7000 Zedboard non-blocking UART example --\n\r";
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
@@ -190,17 +188,7 @@ async fn main(spawner: Spawner) -> ! {
     let gtc = GlobalTimerCounter::new(periphs.gtc, clocks.arm_clocks());
     zynq7000_hal::time_driver_gtc::init(clocks.arm_clocks(), gtc);
 
-    // Set up the UART, we are logging with it.
-    let uart_clk_config = ClockConfig::new_autocalc_with_error(clocks.io_clocks(), 115200)
-        .unwrap()
-        .0;
-    let mut log_uart = Uart::new_with_mio_for_uart_1(
-        periphs.uart_1,
-        Config::new_with_clk_config(uart_clk_config),
-        (gpio_pins.mio.mio48, gpio_pins.mio.mio49),
-    )
-    .unwrap();
-    log_uart.write_all(INIT_STRING.as_bytes());
+    defmt::println!("-- Zynq 7000 Zedboard non-blocking UART example --");
 
     // Initialize the allocator BEFORE you use it
     {
@@ -225,8 +213,6 @@ async fn main(spawner: Spawner) -> ! {
         on_interrupt_uart_0,
     );
 
-    zynq7000_hal::log::uart_blocking::init_with_busy_flag(log_uart, log::LevelFilter::Trace, false);
-
     // Set up UART multiplexing before creating and configuring the UARTs.
     let mut uart_mux = UartMultiplexer::new([
         gpio::Output::new_for_emio(gpio_pins.emio.take(8).unwrap(), gpio::PinState::Low),
@@ -242,7 +228,7 @@ async fn main(spawner: Spawner) -> ! {
     if (UART_MODE == UartMode::Uart0ToUartlite || UART_MODE == UartMode::UartliteToUart16550)
         && uart_speed != 115200
     {
-        log::warn!("UARTLITE speed is not configurable. Hardcoding UART speed to 115200");
+        defmt::warn!("UARTLITE speed is not configurable. Hardcoding UART speed to 115200");
         uart_speed = 115200;
     }
 
@@ -267,7 +253,7 @@ async fn main(spawner: Spawner) -> ! {
     )
     .unwrap();
     if error > 0.02 {
-        log::warn!(
+        defmt::warn!(
             "Calculated clock config for AXI UART16550 has error of {} %, which is higher than 2%. This may lead to incorrect baud rate. Consider changing the input clock or the target baud rate.",
             (error * 100.0)
         );
@@ -280,7 +266,7 @@ async fn main(spawner: Spawner) -> ! {
     };
 
     let boot_mode = BootMode::new_from_regs();
-    info!("Boot mode: {:?}", boot_mode);
+    defmt::info!("Boot mode: {:?}", boot_mode);
 
     let mio_led = gpio::Output::new_for_mio(gpio_pins.mio.mio7, gpio::PinState::Low);
     // Just LD0-LD2 here as a simple "this example is running" indicator. See main.rs for an
@@ -322,24 +308,24 @@ async fn main(spawner: Spawner) -> ! {
     let mut ticker = Ticker::every(Duration::from_millis(200));
     loop {
         if let Ok(read_bytes) = RX_PIPE_UART_0.try_read(&mut read_buf) {
-            info!("Received {read_bytes} bytes on UART0");
-            info!(
+            defmt::info!("Received {} bytes on UART0", read_bytes);
+            defmt::info!(
                 "Data: {:?}",
                 core::str::from_utf8(&read_buf[0..read_bytes]).unwrap()
             );
         }
 
         if let Ok(read_bytes) = RX_PIPE_UARTLITE.try_read(&mut read_buf) {
-            info!("Received {read_bytes} bytes on UARTLITE");
-            info!(
+            defmt::info!("Received {} bytes on UARTLITE", read_bytes);
+            defmt::info!(
                 "Data: {:?}",
                 core::str::from_utf8(&read_buf[0..read_bytes]).unwrap()
             );
         }
 
         if let Ok(read_bytes) = RX_PIPE_UART16550.try_read(&mut read_buf) {
-            info!("Received {read_bytes} bytes on UART16550");
-            info!(
+            defmt::info!("Received {} bytes on UART16550", read_bytes);
+            defmt::info!(
                 "Data: {:?}",
                 core::str::from_utf8(&read_buf[0..read_bytes]).unwrap()
             );
@@ -479,7 +465,7 @@ fn on_interrupt_axi_uartlite() {
     if read_bytes > 0 {
         let written = write_to_pipe(&RX_PIPE_UARTLITE, &buf[0..read_bytes]);
         if written < read_bytes {
-            warn!(
+            defmt::warn!(
                 "UARTLITE RX pipe full, dropped {} bytes",
                 read_bytes - written
             );
@@ -496,7 +482,11 @@ fn on_interrupt_axi_16550() {
         match int_id {
             axi_uart16550::InterruptId2::ReceiverLineStatus => {
                 let errors = rx.on_interrupt_receiver_line_status(iir);
-                warn!("Receiver line status error: {errors:?}");
+                // The AXI UART16550 errors do not implement `defmt::Format`.
+                defmt::warn!(
+                    "Receiver line status error: {:?}",
+                    defmt::Debug2Format(&errors)
+                );
             }
             axi_uart16550::InterruptId2::RxDataAvailable
             | axi_uart16550::InterruptId2::CharTimeout => {
@@ -516,7 +506,7 @@ fn on_interrupt_axi_16550() {
     if read_bytes > 0 {
         let written = write_to_pipe(&RX_PIPE_UART16550, &buf[0..read_bytes]);
         if written < read_bytes {
-            warn!(
+            defmt::warn!(
                 "UART16550 RX pipe full, dropped {} bytes",
                 read_bytes - written
             );
@@ -543,7 +533,7 @@ fn on_interrupt_uart_0() {
     if read_bytes > 0 {
         let written = write_to_pipe(&RX_PIPE_UART_0, &buf[0..read_bytes]);
         if written < read_bytes {
-            warn!("UART0 RX pipe full, dropped {} bytes", read_bytes - written);
+            defmt::warn!("UART0 RX pipe full, dropped {} bytes", read_bytes - written);
         }
     }
 }
@@ -572,7 +562,6 @@ fn prefetch_handler(_faulting_addr: usize) -> ! {
 /// Panic handler
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    let mut uart = unsafe { uart::Uart::steal(uart::UartId::Uart1) };
-    writeln!(uart, "panic: {}\r", info).ok();
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {}
 }

@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## Changed
 
-- `eth::tx_descr::TxError` and `TransmitChecksumGenerationStatus` implement `defmt::Format`.
+- `eth::tx_descr::TxError`, `TransmitChecksumGenerationStatus`, `InterruptResult`, `EthErrors`,
+  `Speed`, `Duplex`, `ClockDivisors` and `ClockDivSet` implement `defmt::Format`.
 - Removed the debug log message after the DDR IOB impedance calibration.
 - `Configurator::set_sgi_interrupt_priority`/`read_sgi_interrupt_priority` now take/return the new
   `gic::Priority` enum (`P0`..`P31`) instead of a raw `u5`.

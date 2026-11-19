@@ -12,8 +12,10 @@ categories = ["embedded", "no-std", "hardware-support"]
 aarch32-cpu = { version = "0.4", features = ["critical-section-single-core"] }
 zynq7000-rt = { path = "../../zynq7000-rt" }
 zynq7000 = { path = "../../zynq7000" }
-zynq7000-hal = { path = "../../zynq7000-hal", features = ["time-driver-gtc"] }
-zedboard-bsp = { path = "../../zedboard-bsp" }
+zynq7000-hal = { path = "../../zynq7000-hal", features = ["time-driver-gtc", "defmt"] }
+z7-defmt-rtt = { path = "../../z7-defmt-rtt" }
+defmt = "1"
+zedboard-bsp = { path = "../../zedboard-bsp", features = ["defmt"] }
 num_enum = { version = "0.7", default-features = false }
 embedded-io = "0.7"
 bitbybit = "2"
@@ -23,7 +25,7 @@ critical-section = "1"
 static_cell = "2"
 embedded-alloc = "0.7"
 embedded-hal = "1"
-ds323x = "0.7"
+ds323x = { version = "0.7", features = ["defmt"] }
 embedded-hal-bus = { version = "0.3", features = ["async"] }
 embedded-hal-async = "1"
 dummy-pin = "1"
@@ -40,8 +42,8 @@ rand = { version = "0.10", default-features = false }
 
 embassy-executor = { version = "0.10", features = ["platform-cortex-ar", "executor-thread"] }
 embassy-time = { version = "0.5", features = ["tick-hz-1_000_000"] }
-embassy-net = { version = "0.9", features = ["dhcpv4", "packet-trace", "medium-ethernet", "icmp", "tcp", "udp", "auto-icmp-echo-reply"] }
-embedded-sdmmc = "0.10"
+embassy-net = { version = "0.9", features = ["defmt", "dhcpv4", "packet-trace", "medium-ethernet", "icmp", "tcp", "udp", "auto-icmp-echo-reply"] }
+embedded-sdmmc = { version = "0.10", default-features = false, features = ["defmt-log"] }
 embassy-sync = { version = "0.8" }
 heapless = "0.9"
 axi-uartlite = { version = "0.3" }

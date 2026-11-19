@@ -18,15 +18,13 @@ use ds323x::{DateTimeAccess, Ds323x, NaiveDate};
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Ticker};
 use embedded_hal::i2c::{NoAcknowledgeSource, Operation};
-use log::{debug, error, info};
+use z7_defmt_rtt as _;
 use zedboard::PS_CLOCK_FREQUENCY;
 use zynq7000_hal::{
-    BootMode, clocks::Clocks, generic_interrupt_handler, gpio, gtc::GlobalTimerCounter, i2c, uart,
+    BootMode, clocks::Clocks, generic_interrupt_handler, gpio, gtc::GlobalTimerCounter, i2c,
 };
 
 use zynq7000_rt as _;
-
-const INIT_STRING: &str = "-- Zynq 7000 Zedboard I2C DS3231 example --\n\r";
 
 const DS3231_ADDR: u8 = 0x68;
 /// No device on the bus uses this address.
@@ -61,22 +59,10 @@ async fn main(_spawner: Spawner) -> ! {
     let gtc = GlobalTimerCounter::new(periphs.gtc, clocks.arm_clocks());
     zynq7000_hal::time_driver_gtc::init(clocks.arm_clocks(), gtc);
 
-    // Set up the UART, we are logging with it.
-    let uart_clk_config = uart::ClockConfig::new_autocalc_with_error(clocks.io_clocks(), 115200)
-        .unwrap()
-        .0;
-    let mut uart = uart::Uart::new_with_mio_for_uart_1(
-        periphs.uart_1,
-        uart::Config::new_with_clk_config(uart_clk_config),
-        (gpio_pins.mio.mio48, gpio_pins.mio.mio49),
-    )
-    .unwrap();
-    uart.write_all(INIT_STRING.as_bytes());
-
-    zynq7000_hal::log::uart_blocking::init_with_busy_flag(uart, log::LevelFilter::Trace, false);
+    defmt::println!("-- Zynq 7000 Zedboard I2C DS3231 example --");
 
     let boot_mode = BootMode::new_from_regs();
-    info!("Boot mode: {:?}", boot_mode);
+    defmt::info!("Boot mode: {:?}", boot_mode);
 
     let clk_config =
         i2c::calculate_divisors(clocks.arm_clocks().cpu_1x_clk(), i2c::Speed::Normal100kHz)
@@ -97,7 +83,8 @@ async fn main(_spawner: Spawner) -> ! {
             .and_hms_opt(12, 0, 0)
             .unwrap();
         rtc.set_datetime(&time).unwrap();
-        info!("Set time to {}", time);
+        // `NaiveDateTime` does not implement `defmt::Format`.
+        defmt::info!("Set time to {}", defmt::Display2Format(&time));
     }
 
     let mut ticker = Ticker::every(Duration::from_secs(1));
@@ -106,8 +93,8 @@ async fn main(_spawner: Spawner) -> ! {
             .datetime()
             .and_then(|time| rtc.temperature().map(|temp| (time, temp)))
         {
-            Ok((time, temp)) => info!("{}, {:.2} °C", time, temp),
-            Err(e) => error!("DS3231 read failed: {:?}", e),
+            Ok((time, temp)) => defmt::info!("{}, {} °C", defmt::Display2Format(&time), temp),
+            Err(e) => defmt::error!("DS3231 read failed: {:?}", e),
         }
         ticker.next().await;
     }
@@ -116,7 +103,7 @@ async fn main(_spawner: Spawner) -> ! {
 /// One-shot tests for the corner cases of the driver. Check these on a logic analyzer as well.
 fn run_transfer_tests(i2c: &mut i2c::I2c) {
     if let Err(e) = i2c.write(DS3231_ADDR, &[]) {
-        error!("DS3231 not found at address {:#04x}: {:?}", DS3231_ADDR, e);
+        defmt::error!("DS3231 not found at address {:#04x}: {:?}", DS3231_ADDR, e);
         return;
     }
     let mut report = Report::default();
@@ -136,7 +123,7 @@ fn run_transfer_tests(i2c: &mut i2c::I2c) {
         i2c.write_read(DS3231_ADDR, &[REG_SECONDS], &mut regs)
             .map_err(Failure::Bus),
     );
-    debug!("registers: {:02x?}", regs);
+    defmt::debug!("registers: {:02x}", regs);
 
     // The registers are written back unchanged, so the clock loses less than a second.
     report.check(
@@ -205,13 +192,13 @@ enum Failure {
     },
 }
 
-impl core::fmt::Display for Failure {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+impl defmt::Format for Failure {
+    fn format(&self, f: defmt::Formatter) {
         match self {
-            Failure::Bus(e) => write!(f, "{:?}", e),
-            Failure::Unexpected(result) => write!(f, "unexpected result {:?}", result),
+            Failure::Bus(e) => defmt::write!(f, "{:?}", e),
+            Failure::Unexpected(result) => defmt::write!(f, "unexpected result {:?}", result),
             Failure::DataMismatch { read, expected } => {
-                write!(f, "read {:02x?}, expected {:02x?}", read, expected)
+                defmt::write!(f, "read {:02x}, expected {:02x}", read, expected)
             }
         }
     }
@@ -229,17 +216,17 @@ impl Report {
         match result {
             Ok(()) => {
                 self.passed += 1;
-                info!("[ok] {}", name);
+                defmt::info!("[ok] {}", name);
             }
-            Err(failure) => error!("[failed] {}: {}", name, failure),
+            Err(failure) => defmt::error!("[failed] {}: {}", name, failure),
         }
     }
 
     fn summary(&self) {
         if self.passed == self.total {
-            info!("all {} transfer tests passed", self.total);
+            defmt::info!("all {} transfer tests passed", self.total);
         } else {
-            error!(
+            defmt::error!(
                 "{} of {} transfer tests failed",
                 self.total - self.passed,
                 self.total
@@ -281,6 +268,6 @@ pub extern "C" fn _prefetch_handler() {
 /// Panic handler
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    error!("Panic: {info:?}");
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {}
 }
