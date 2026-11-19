@@ -8,8 +8,13 @@ use zynq7000::eth::{
     MmioRegisters, RxStatus, TxStatus,
 };
 
-pub use ll::{ClockConfig, ClockDivSet, Duplex, EthernetLowLevel, Speed};
+pub use driver_errors::{DriverError, ErrorHandler};
+pub use ll::{
+    ClockConfig, ClockDivSet, Duplex, EthernetLowLevel, RxStatistics, Speed, Statistics,
+    TxStatistics,
+};
 
+pub mod driver_errors;
 pub mod embassy_net;
 pub mod ll;
 pub mod mdio;
@@ -118,6 +123,7 @@ impl EthernetId {
     /// # Safety
     ///
     /// Circumvents ownership and safety guarantees of the HAL.
+    #[inline]
     pub const unsafe fn steal_regs(&self) -> zynq7000::eth::MmioRegisters<'static> {
         // SAFETY: Upheld by the caller.
         unsafe {
@@ -308,6 +314,7 @@ pub struct EthernetConfig {
 
 impl EthernetConfig {
     /// Creates a new Ethernet configuration.
+    #[inline]
     pub fn new(
         clk_config_1000_mbps: ClockConfig,
         mdc_clk_div: MdcClockDivisor,
@@ -612,6 +619,7 @@ impl Ethernet {
     /// Starts the peripheral by enabling relevant interrupts as well as the TX and RX blocks.
     ///
     /// The user should set valid TX and RX buffer queue addresses before calling this function.
+    #[inline]
     pub fn start(&mut self) {
         self.clear_interrupts();
         self.enable_interrupts();
@@ -635,6 +643,7 @@ impl Ethernet {
     }
 
     /// Reset and initialize the peripheral again. The descriptor list base addresses are kept.
+    #[inline]
     pub fn reset(&mut self) {
         self.ll.reset(3);
         // Do not set RX and TX queue base address.
@@ -720,6 +729,7 @@ impl Ethernet {
     }
 
     /// Mutable MDIO interface.
+    #[inline]
     pub fn mdio_mut(&mut self) -> &mut mdio::Mdio {
         &mut self.mdio
     }
@@ -768,6 +778,18 @@ impl Ethernet {
             /// Enable or disable the transmitter and the receiver.
             #[inline]
             pub fn set_tx_rx_enable(&mut self, tx_enable: bool, rx_enable: bool);
+
+            /// See [EthernetLowLevel::read_statistics].
+            #[inline]
+            pub fn read_statistics(&mut self) -> Statistics;
+
+            /// See [EthernetLowLevel::read_tx_statistics].
+            #[inline]
+            pub fn read_tx_statistics(&mut self) -> TxStatistics;
+
+            /// See [EthernetLowLevel::read_rx_statistics].
+            #[inline]
+            pub fn read_rx_statistics(&mut self) -> RxStatistics;
         }
     }
 }

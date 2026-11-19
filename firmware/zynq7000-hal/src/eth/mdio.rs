@@ -12,6 +12,7 @@ pub struct Mdio {
 
 impl Mdio {
     /// Create the MDIO interface. `clause22` selects clause 22 instead of clause 45 frames.
+    #[inline]
     pub fn new(ll: &EthernetLowLevel, clause22: bool) -> Self {
         Self {
             // SAFETY: The MDIO interface only accesses the PHY maintenance and the MDC divisor bits.
@@ -23,6 +24,7 @@ impl Mdio {
     /// # Safety
     ///
     /// Circumvents ownership and safety guarantees of the HAL.
+    #[inline]
     pub unsafe fn steal(eth_id: EthernetId, clause22: bool) -> Self {
         Self {
             // SAFETY: Upheld by the caller.
@@ -36,6 +38,7 @@ impl Mdio {
     /// # Safety
     ///
     /// Circumvents ownership and safety guarantees of the HAL.
+    #[inline]
     pub unsafe fn clone(&self) -> Self {
         Self {
             // SAFETY: Upheld by the caller.

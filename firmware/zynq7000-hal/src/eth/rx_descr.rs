@@ -231,6 +231,7 @@ impl<'a> DescriptorListWrapper<'a> {
     /// # Safety
     ///
     /// You must not use both the original and the clone at the same time.
+    #[inline]
     pub unsafe fn clone_unchecked(&mut self) -> Self {
         Self {
             // SAFETY: Upheld by the caller.
@@ -396,6 +397,7 @@ impl DescriptorListWrapper<'_> {
     }
 
     /// Give the slot back to the hardware after its frame was processed.
+    #[inline]
     pub fn clear_slot(&mut self, index: usize) {
         if index >= self.list.len() {
             return;

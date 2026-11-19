@@ -706,139 +706,142 @@ pub struct Registers {
 static_assertions::const_assert_eq!(core::mem::size_of::<Registers>(), 0x294);
 
 /// Ethernet statistics registers
+///
+/// The counters clear to zero when read and stop counting at all ones.
+/// Read the lower 32 bits of an octet counter before the upper bits.
 #[derive(derive_mmio::Mmio)]
 #[repr(C)]
 pub struct Statistics {
     /// Lower 32 bits of transmitted octets.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     tx_octets_low: u32,
     /// Upper bits of transmitted octets.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     tx_octets_high: u32,
     /// Number of frames transmitted.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     tx_count: u32,
     /// Number of broadcast frames transmitted.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     tx_broadcast: u32,
     /// Number of multicast frames transmitted.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     tx_multicast: u32,
     /// Number of pause frames transmitted.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     tx_pause: u32,
     /// Number of 64 byte frames transmitted.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     tx_64_bits: u32,
     /// Number of 65 to 127 byte frames transmitted.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     tx_65_to_127_bits: u32,
     /// Number of 128 to 255 byte frames transmitted.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     tx_128_to_255_bits: u32,
     /// Number of 256 to 511 byte frames transmitted.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     tx_256_to_511_bits: u32,
     /// Number of 512 to 1023 byte frames transmitted.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     tx_512_to_1023_bits: u32,
     /// Number of 1024 to 1518 byte frames transmitted.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     tx_1024_to_1518_bits: u32,
     _reserved0: u32,
     /// Number of transmit underrun errors.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     tx_underruns: u32,
     /// Number of frames transmitted with a single collision.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     single_collision_frames: u32,
     /// Number of frames transmitted with multiple collisions.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     multi_collision_frames: u32,
     /// Number of frames not transmitted due to excessive collisions.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     excessive_collisions: u32,
     /// Number of frames transmitted with a late collision.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     late_collisions: u32,
     /// Number of frames experiencing transmit deferral.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     deferred_tx: u32,
     /// Number of carrier sense errors during transmission.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     carrier_sense_errors: u32,
     /// Lower 32 bits of received octets.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_octets_low: u32,
     /// Upper bits of received octets.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_octets_high: u32,
     /// Number of frames received.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_count: u32,
     /// Number of broadcast frames received.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_broadcast: u32,
     /// Number of multicast frames received.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_multicast: u32,
     /// Number of pause frames received.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_pause: u32,
     /// Number of 64 byte frames received.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_64_bits: u32,
     /// Number of 65 to 127 byte frames received.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_65_to_127_bits: u32,
     /// Number of 128 to 255 byte frames received.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_128_to_255_bits: u32,
     /// Number of 256 to 511 byte frames received.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_256_to_511_bits: u32,
     /// Number of 512 to 1023 byte frames received.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_512_to_1023_bits: u32,
     /// Number of 1024 to 1518 byte frames received.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_1024_to_1518_bits: u32,
     _reserved1: u32,
     /// Number of undersized frames received.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_undersize: u32,
     /// Number of oversized frames received.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_oversize: u32,
     /// Number of jabber frames received.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_jabber: u32,
     /// Number of frames received with an FCS error.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_frame_check_sequence_errors: u32,
     /// Number of frames received with a length field error.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_length_field_errors: u32,
     /// Number of frames received with a symbol error.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_symbol_errors: u32,
     /// Number of frames received with an alignment error.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_alignment_errors: u32,
     /// Number of frames dropped due to a lack of receive resources.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_resource_errors: u32,
     /// Number of frames dropped due to a receive overrun.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_overrun_errors: u32,
     /// Number of frames received with an IP header checksum error.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_ip_header_checksum_errors: u32,
     /// Number of frames received with a TCP checksum error.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_tcp_checksum_errors: u32,
     /// Number of frames received with a UDP checksum error.
-    #[mmio(PureRead)]
+    #[mmio(Read)]
     rx_udp_checksum_errors: u32,
 }
 

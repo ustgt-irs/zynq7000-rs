@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## Changed
 
+- Removed the `eth-packet-trace` feature. embassy-net has its own `packet-trace` feature, and
+  smoltcp offers `phy::Tracer`.
+- The Ethernet driver does not log anymore. Its errors are reported to an `eth::ErrorHandler`.
+- `eth::embassy_net::Driver` and `eth::smoltcp::Driver` are generic over the `eth::ErrorHandler`,
+  which defaults to `()`. `eth::embassy_net::Driver::new` takes the handler as an additional
+  argument.
 - `eth::tx_descr::TxError`, `TransmitChecksumGenerationStatus`, `InterruptResult`, `EthErrors`,
   `Speed`, `Duplex`, `ClockDivisors` and `ClockDivSet` implement `defmt::Format`.
 - Removed the debug log message after the DDR IOB impedance calibration.
@@ -35,6 +41,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## Added
 
+- `eth::DriverError` and the `eth::ErrorHandler` trait for errors of the smoltcp and embassy-net
+  driver. `()` ignores all errors. `eth::tx_descr::TxError` implements `Clone` and `Copy`.
+- `read_statistics`, `read_tx_statistics` and `read_rx_statistics` for `Ethernet` and
+  `EthernetLowLevel` with `eth::Statistics`, `TxStatistics` and `RxStatistics` to read selected
+  statistics counters.
 - `defmt::Format` for `BootMode`, `BootDevice`, `i2c::Error`, `sd::SdClockConfig` and
   `sd::SdioDivisors`. The `defmt` feature also enables `defmt` support of `embedded-hal`.
 - `mmu::l1_section` to read a section of the global L1 table.

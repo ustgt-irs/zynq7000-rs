@@ -38,7 +38,8 @@ use zynq7000_hal::{
     BootMode,
     clocks::Clocks,
     eth::{
-        AlignedBuffer, ClockDivSet, EthernetConfig, EthernetLowLevel, embassy_net::InterruptResult,
+        AlignedBuffer, ClockDivSet, DriverError, ErrorHandler, EthernetConfig, EthernetLowLevel,
+        embassy_net::InterruptResult,
     },
     generic_interrupt_handler,
     gic::Interrupt,
@@ -90,6 +91,16 @@ static ETH_ERR_QUEUE: embassy_sync::channel::Channel<
     8,
 > = embassy_sync::channel::Channel::new();
 
+struct EthErrorHandler;
+
+impl ErrorHandler for EthErrorHandler {
+    fn on_error(&mut self, error: DriverError) {
+        defmt::warn!("Ethernet driver error: {:?}", error);
+    }
+}
+
+type EthDriver = zynq7000_hal::eth::embassy_net::Driver<EthErrorHandler>;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum IpMode {
     LinkDown,
@@ -105,9 +116,7 @@ fn entry_point() -> ! {
 }
 
 #[embassy_executor::task]
-async fn embassy_net_task(
-    mut runner: embassy_net::Runner<'static, zynq7000_hal::eth::embassy_net::Driver>,
-) -> ! {
+async fn embassy_net_task(mut runner: embassy_net::Runner<'static, EthDriver>) -> ! {
     runner.run().await
 }
 
@@ -298,7 +307,7 @@ async fn main(spawner: Spawner) -> ! {
     phy.reset();
     phy.restart_auto_negotiation();
 
-    let driver = zynq7000_hal::eth::embassy_net::Driver::new(
+    let driver = EthDriver::new(
         &eth,
         MAC_ADDRESS,
         zynq7000_hal::eth::embassy_net::DescriptorsAndBuffers::new(
@@ -308,6 +317,7 @@ async fn main(spawner: Spawner) -> ! {
             tx_bufs,
         )
         .unwrap(),
+        EthErrorHandler,
     );
     let config = if USE_DHCP {
         embassy_net::Config::dhcpv4(Default::default())
@@ -361,8 +371,7 @@ async fn main(spawner: Spawner) -> ! {
     let mut mio_led = gpio::Output::new_for_mio(gpio_pins.mio.mio7, gpio::PinState::Low);
 
     let mut ip_mode = IpMode::LinkDown;
-    let mut transmitted_frames = 0;
-    let mut received_frames = 0;
+    let mut eth_stats = zynq7000_hal::eth::Statistics::default();
     let receiver = ETH_ERR_QUEUE.receiver();
     loop {
         // Handle error messages from ethernet interrupt.
@@ -370,15 +379,10 @@ async fn main(spawner: Spawner) -> ! {
             defmt::info!("Received interrupt result: {:?}", msg);
         }
         if PRINT_PACKET_STATS {
-            let sent_frames_since_last = eth.ll().regs.statistics().read_tx_count();
-            if sent_frames_since_last > 0 {
-                transmitted_frames += sent_frames_since_last;
-                defmt::info!("Frame sent count: {}", transmitted_frames);
-            }
-            let received_frames_since_last = eth.ll().regs.statistics().read_rx_count();
-            if received_frames_since_last > 0 {
-                received_frames += received_frames_since_last;
-                defmt::info!("Frame received count: {}", received_frames);
+            let new_stats = eth.read_statistics();
+            if new_stats != Default::default() {
+                eth_stats += new_stats;
+                defmt::info!("Ethernet statistics: {:?}", eth_stats);
             }
         }
 

@@ -67,10 +67,6 @@ first-segment-ddr-attr = []
 # caching is disabled.
 eth-cache-maintenance = []
 
-# Enable debug-level (packet size only) and trace-level (packet contents)
-# logging of all packets received and transmitted.
-eth-packet-trace = []
-
 [dev-dependencies]
 approx = "0.5"
 

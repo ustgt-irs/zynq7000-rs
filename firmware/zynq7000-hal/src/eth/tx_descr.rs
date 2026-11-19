@@ -180,7 +180,7 @@ impl Default for Descriptor {
 }
 
 /// TX error bits of a descriptor.
-#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("tx error: {self:?}")]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct TxError {
