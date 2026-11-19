@@ -25,3 +25,4 @@ z7-ps7init = { path = "../z7-ps7init" }
 serialport = { version = "4" }
 indicatif = { version = "0.18" }
 ctrlc = { version = "3" }
+defmt-decoder = { version = "1" }

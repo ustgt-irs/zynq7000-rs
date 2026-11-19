@@ -1,0 +1,18 @@
+[package]
+name = "z7-defmt-rtt"
+version = "0.1.0"
+edition = "2021"
+description = "Send defmt log messages over RTT on Zynq-7000 SoCs"
+repository = "https://github.com/ustgt-irs/zynq7000-rs"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["defmt", "defmt-transport", "rtt", "zynq7000", "no-std"]
+categories = ["embedded", "no-std"]
+
+[features]
+disable-blocking-mode = []
+
+[dependencies]
+defmt = { version = "1" }
+critical-section = "1.2"
+zynq7000-hal = { path = "../zynq7000-hal" }
