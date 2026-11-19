@@ -33,8 +33,7 @@ fn main() -> ! {
     let mio_pins = gpio::mio::Pins::new(dp.gpio);
 
     let boot_mode = BootMode::new_from_regs();
-    // `BootMode` does not implement `defmt::Format`.
-    defmt::info!("Boot mode: {:?}", defmt::Debug2Format(&boot_mode));
+    defmt::info!("Boot mode: {:?}", boot_mode);
 
     let mut led = gpio::Output::new_for_mio(mio_pins.mio7, gpio::PinState::Low);
     loop {

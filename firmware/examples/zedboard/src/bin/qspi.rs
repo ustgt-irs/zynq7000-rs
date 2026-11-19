@@ -6,17 +6,14 @@ use arbitrary_int::{traits::Integer as _, u2};
 use core::panic::PanicInfo;
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Ticker};
-use log::{error, info};
+use z7_defmt_rtt as _;
 use zedboard::PS_CLOCK_FREQUENCY;
 use zedboard_bsp::qspi_spansion;
-use zynq7000_hal::{
-    BootMode, clocks, generic_interrupt_handler, gpio, gtc, prelude::*, qspi, uart,
-};
+use zynq7000_hal::{BootMode, clocks, generic_interrupt_handler, gpio, gtc, prelude::*, qspi};
 
 use zynq7000_rt as _;
 
 const DISPLAY_CLOCK_CONFIG: bool = false;
-const INIT_STRING: &str = "-- Zynq 7000 Zedboard QSPI example --\n\r";
 const QSPI_DEV_COMBINATION: qspi::QspiDeviceCombination = qspi::QspiDeviceCombination {
     vendor: qspi::QspiVendor::WinbondAndSpansion,
     operating_mode: qspi::OperatingMode::FastReadQuadOutput,
@@ -44,23 +41,12 @@ async fn main(_spawner: Spawner) -> ! {
     let gtc = gtc::GlobalTimerCounter::new(periphs.gtc, clocks.arm_clocks());
     zynq7000_hal::time_driver_gtc::init(clocks.arm_clocks(), gtc);
 
-    // Set up the UART, we are logging with it.
-    let uart_clk_config = uart::ClockConfig::new_autocalc_with_error(clocks.io_clocks(), 115200)
-        .unwrap()
-        .0;
-    let mut uart = uart::Uart::new_with_mio_for_uart_1(
-        periphs.uart_1,
-        uart::Config::new_with_clk_config(uart_clk_config),
-        (gpio_pins.mio.mio48, gpio_pins.mio.mio49),
-    )
-    .unwrap();
-    uart.write_all(INIT_STRING.as_bytes());
-    zynq7000_hal::log::uart_blocking::init_with_busy_flag(uart, log::LevelFilter::Trace, false);
+    defmt::println!("-- Zynq 7000 Zedboard QSPI example --");
 
     let boot_mode = BootMode::new_from_regs();
-    info!("Boot mode: {:?}", boot_mode);
+    defmt::info!("Boot mode: {:?}", boot_mode);
     if DISPLAY_CLOCK_CONFIG {
-        log::debug!("clock config: {:?}", clocks);
+        defmt::debug!("clock config: {:?}", clocks);
     }
 
     let qspi_clock_config =
@@ -94,7 +80,7 @@ async fn main(_spawner: Spawner) -> ! {
     );
 
     let rdid = spansion_qspi.read_rdid_extended();
-    info!(
+    defmt::info!(
         "QSPI Info: manufacturer ID: {:?}, interface type: {:?}, density: {:?}, sector arch: {:?}, model number: {:?}",
         rdid.base_id().manufacturer_id(),
         rdid.base_id().memory_interface_type(),
@@ -103,9 +89,9 @@ async fn main(_spawner: Spawner) -> ! {
         rdid.model_number()
     );
     let cr1 = spansion_qspi.read_configuration_register();
-    info!("QSPI Configuration Register 1: {:?}", cr1);
+    defmt::info!("QSPI Configuration Register 1: {:?}", cr1);
     let sr = spansion_qspi.read_status_register_1();
-    info!("QSPI Status Register: {:?}", sr);
+    defmt::info!("QSPI Status Register: {:?}", sr);
 
     let mut write_buf: [u8; 100 * qspi_spansion::PAGE_SIZE] = [0x0; 100 * qspi_spansion::PAGE_SIZE];
     for (idx, byte) in write_buf.iter_mut().enumerate() {
@@ -114,7 +100,7 @@ async fn main(_spawner: Spawner) -> ! {
     let mut read_buf = [0u8; 100 * qspi_spansion::PAGE_SIZE];
 
     if ERASE_PROGRAM_READ_TEST {
-        info!("performing erase, program, read test");
+        defmt::info!("performing erase, program, read test");
         spansion_qspi
             .erase_sector(TEST_QSPI_BASE)
             .expect("erasing sector failed");
@@ -147,7 +133,7 @@ async fn main(_spawner: Spawner) -> ! {
             current_offset += chunk.len();
             current_qspi_offset += chunk.len() as u32;
         }
-        info!("test successful");
+        defmt::info!("test successful");
     }
 
     let mut spansion_lqspi = spansion_qspi.into_linear_addressed(QSPI_DEV_COMBINATION.into());
@@ -213,6 +199,6 @@ fn prefetch_handler(_faulting_addr: usize) -> ! {
 /// Panic handler
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    error!("Panic: {info:?}");
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {}
 }

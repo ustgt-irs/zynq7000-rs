@@ -9,24 +9,15 @@ use embassy_time::{Delay, Duration, Ticker};
 use embedded_graphics::{Drawable as _, geometry::Point};
 use embedded_hal_async::delay::DelayNs as _;
 use embedded_hal_bus::spi::{ExclusiveDevice, NoDelay};
-use embedded_io::Write;
-use log::info;
 use ssd1306::{Ssd1306, prelude::*};
+use z7_defmt_rtt as _;
 use zedboard::PS_CLOCK_FREQUENCY;
-use zynq7000_hal::{
-    BootMode, clocks, generic_interrupt_handler, gpio, gtc,
-    log::asynch::UartLoggerRunner,
-    spi,
-    time::Hertz,
-    uart::{self, TxAsync},
-};
+use zynq7000_hal::{BootMode, clocks, generic_interrupt_handler, gpio, gtc, spi, time::Hertz};
 
 use embedded_graphics::image::Image;
 use tinybmp::Bmp;
 
 use zynq7000_rt as _;
-
-const INIT_STRING: &str = "-- Zynq 7000 Zedboard OLED example --\n\r";
 
 /// Entry point which calls the embassy main method.
 #[zynq7000_rt::entry]
@@ -58,29 +49,11 @@ async fn main(spawner: Spawner) -> ! {
     let gtc = gtc::GlobalTimerCounter::new(periphs.gtc, clocks.arm_clocks());
     zynq7000_hal::time_driver_gtc::init(clocks.arm_clocks(), gtc);
 
-    // Set up the UART, we are logging with it.
-    let uart_clk_config = uart::ClockConfig::new_autocalc_with_error(clocks.io_clocks(), 115200)
-        .unwrap()
-        .0;
-    let mut uart = uart::Uart::new_with_mio_for_uart_1(
-        periphs.uart_1,
-        uart::Config::new_with_clk_config(uart_clk_config),
-        (gpio_pins.mio.mio48, gpio_pins.mio.mio49),
-    )
-    .unwrap();
-    uart.write_all(INIT_STRING.as_bytes());
-    uart.flush().unwrap();
-
-    let (tx, _) = uart.split();
-    let tx_async = TxAsync::new(tx, true);
-    let log_runner =
-        zynq7000_hal::log::asynch::init_with_uart_tx(log::LevelFilter::Trace, tx_async)
-            .expect("Failed to initialize async logger");
-    spawner.spawn(logger_task(log_runner).unwrap());
+    defmt::println!("-- Zynq 7000 Zedboard OLED example --");
 
     let boot_mode = BootMode::new_from_regs();
-    info!("Boot mode: {:?}", boot_mode);
-    info!(
+    defmt::info!("Boot mode: {:?}", boot_mode);
+    defmt::info!(
         "SPI reference clock speed: {:?}",
         clocks.io_clocks().spi_clk()
     );
@@ -204,11 +177,6 @@ impl FerrisMovement {
 }
 
 #[embassy_executor::task]
-pub async fn logger_task(mut log_runner: UartLoggerRunner) -> ! {
-    log_runner.run().await
-}
-
-#[embassy_executor::task]
 pub async fn blinky_task(mut mio_led: gpio::Output, mut emio_leds: [gpio::Output; 3]) {
     let mut ticker = Ticker::every(Duration::from_millis(200));
     loop {
@@ -256,7 +224,6 @@ fn prefetch_handler(_faulting_addr: usize) -> ! {
 /// Panic handler
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    let mut uart = unsafe { uart::Uart::steal(uart::UartId::Uart1) };
-    writeln!(uart, "panic: {}\r", info).ok();
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {}
 }

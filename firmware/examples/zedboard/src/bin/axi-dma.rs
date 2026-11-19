@@ -9,15 +9,12 @@ use core::panic::PanicInfo;
 use embassy_executor::Spawner;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pipe::Pipe};
 use embassy_time::{Duration, Ticker};
-use log::{error, info};
+use z7_defmt_rtt as _;
 use zedboard::PS_CLOCK_FREQUENCY;
-use zynq7000_hal::{
-    BootMode, Interrupt, cache, clocks, generic_interrupt_handler, gpio, gtc, uart,
-};
+use zynq7000_hal::{BootMode, Interrupt, cache, clocks, generic_interrupt_handler, gpio, gtc};
 
 use zynq7000_rt as _;
 
-const INIT_STRING: &str = "-- Zynq 7000 AXI DMA example --\n\r";
 const BASE_ADDR_DMAC: usize = 0x4040_0000;
 const AXI_DMA_TX_INTERRUPT: zynq7000_hal::SpiInterrupt = zynq7000_hal::SpiInterrupt::Pl2;
 const AXI_DMA_RX_INTERRUPT: zynq7000_hal::SpiInterrupt = zynq7000_hal::SpiInterrupt::Pl3;
@@ -54,22 +51,10 @@ async fn main(spawner: Spawner) -> ! {
     let gtc = gtc::GlobalTimerCounter::new(periphs.gtc, clocks.arm_clocks());
     zynq7000_hal::time_driver_gtc::init(clocks.arm_clocks(), gtc);
 
-    // Set up the UART, we are logging with it.
-    let uart_clk_config = uart::ClockConfig::new_autocalc_with_error(clocks.io_clocks(), 115200)
-        .unwrap()
-        .0;
-    let mut uart = uart::Uart::new_with_mio_for_uart_1(
-        periphs.uart_1,
-        uart::Config::new_with_clk_config(uart_clk_config),
-        (gpio_pins.mio.mio48, gpio_pins.mio.mio49),
-    )
-    .unwrap();
-    uart.write_all(INIT_STRING.as_bytes());
-
-    zynq7000_hal::log::uart_blocking::init_with_busy_flag(uart, log::LevelFilter::Trace, false);
+    defmt::println!("-- Zynq 7000 AXI DMA example --");
 
     let boot_mode = BootMode::new_from_regs();
-    info!("Boot mode: {:?}", boot_mode);
+    defmt::info!("Boot mode: {:?}", boot_mode);
 
     // If the reset timeouts, there is a high chance the base address is incorrect.
     let mut dma = axi_dma::DmaController::new(BASE_ADDR_DMAC)
@@ -138,7 +123,7 @@ async fn main(spawner: Spawner) -> ! {
             .expect("async write failed");
 
         if PRINT_BUF_PERIODIC {
-            log::debug!("ASYNC TX: Written {} bytes", BUFFER_LEN);
+            defmt::debug!("ASYNC TX: Written {} bytes", BUFFER_LEN);
         }
         let pipe_was_full = RX_DATA_PIPE.is_full();
         value = start_value;
@@ -150,14 +135,14 @@ async fn main(spawner: Spawner) -> ! {
                 value = value.wrapping_add(1);
             }
             if PRINT_BUF_PERIODIC {
-                log::debug!("RX pipe: {} bytes: {:x?}", n, &rx_buf[..n]);
+                defmt::debug!("RX pipe: {} bytes: {:x}", n, &rx_buf[..n]);
             }
         }
         if pipe_was_full {
-            log::warn!("RX pipe was full");
+            defmt::warn!("RX pipe was full");
         }
         if once {
-            log::info!("Async DMA transfer OK");
+            defmt::info!("Async DMA transfer OK");
             once = false;
         }
         start_value = start_value.wrapping_add(1);
@@ -216,7 +201,7 @@ fn blocking_test(writer: &mut SimpleDmaWriter, reader: &mut SimpleDmaReader) {
     }
     .expect("tx buffer not cache-line aligned");
     writer.write(&tx_buf.0).unwrap();
-    info!("wrote {} bytes via MM2S", tx_buf.0.len());
+    defmt::info!("wrote {} bytes via MM2S", tx_buf.0.len());
 
     let received = read_transfer.wait();
     // Invalidate the whole buffer, not just `received`: a short frame can leave its length not
@@ -227,7 +212,7 @@ fn blocking_test(writer: &mut SimpleDmaWriter, reader: &mut SimpleDmaReader) {
         cache::invalidate_data_cache_range(received.as_ptr() as u32, BUFFER_LEN)
     }
     .expect("rx buffer not cache-line aligned");
-    info!("received {} bytes via S2MM", received.len());
+    defmt::info!("received {} bytes via S2MM", received.len());
     let expected: [u8; BUFFER_LEN] = core::array::from_fn(|i| i as u8);
     assert_eq!(
         received,
@@ -274,12 +259,13 @@ pub fn interrupt_handler_axi_dma_rx() {
                 .expect("rx buffer not cache-line aligned");
             let written = write_to_rx_pipe(data);
             if written < data.len() {
-                log::warn!("RX_DATA_PIPE full, dropped {} bytes", data.len() - written);
+                defmt::warn!("RX_DATA_PIPE full, dropped {} bytes", data.len() - written);
             }
         }
         Ok(None) => (),
         Err(e) => {
-            log::warn!("DMA transfer error: {}", e);
+            // The AXI DMA error does not implement `defmt::Format`.
+            defmt::warn!("DMA transfer error: {}", defmt::Display2Format(&e));
         }
     }
 }
@@ -319,6 +305,6 @@ fn prefetch_handler(_faulting_addr: usize) -> ! {
 /// Panic handler
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    error!("Panic: {info:?}");
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {}
 }

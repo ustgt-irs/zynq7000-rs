@@ -5,15 +5,13 @@ use aarch32_cpu::asm::nop;
 use core::panic::PanicInfo;
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Ticker};
-use log::error;
+use z7_defmt_rtt as _;
 use zedboard::PS_CLOCK_FREQUENCY;
 use zynq7000_hal::sd::SdClockConfig;
-use zynq7000_hal::{BootMode, clocks, gpio, gtc, sd::SdCardUninit, uart};
+use zynq7000_hal::{BootMode, clocks, gpio, gtc, sd::SdCardUninit};
 use zynq7000_hal::{generic_interrupt_handler, prelude::*};
 
 use zynq7000_rt as _;
-
-const INIT_STRING: &str = "-- Zynq 7000 Zedboard SDIO example --\n\r";
 
 // These are off by default because they write to the SD card as well.
 const LOW_LEVEL_TESTS: bool = false;
@@ -47,23 +45,11 @@ async fn main(_spawner: Spawner) -> ! {
     let gtc = gtc::GlobalTimerCounter::new(periphs.gtc, clocks.arm_clocks());
     zynq7000_hal::time_driver_gtc::init(clocks.arm_clocks(), gtc);
 
-    // Set up the UART, we are logging with it.
-    let uart_clk_config = uart::ClockConfig::new_autocalc_with_error(clocks.io_clocks(), 115200)
-        .unwrap()
-        .0;
-    let mut uart = uart::Uart::new_with_mio_for_uart_1(
-        periphs.uart_1,
-        uart::Config::new_with_clk_config(uart_clk_config),
-        (gpio_pins.mio.mio48, gpio_pins.mio.mio49),
-    )
-    .unwrap();
-    uart.write_all(INIT_STRING.as_bytes());
-    // Safety: We are not multi-threaded yet.
-    zynq7000_hal::log::uart_blocking::init_with_busy_flag(uart, log::LevelFilter::Trace, false);
+    defmt::println!("-- Zynq 7000 Zedboard SDIO example --");
 
     let sdio_clock_config =
         SdClockConfig::calculate_for_io_clock(clocks.io_clocks(), 100.MHz(), 10.MHz()).unwrap();
-    log::info!("SDIO clock config: {:?}", sdio_clock_config);
+    defmt::info!("SDIO clock config: {:?}", sdio_clock_config);
     let sd_card_uninit = SdCardUninit::new_for_sdio_0(
         periphs.sdio_0,
         sdio_clock_config,
@@ -85,17 +71,17 @@ async fn main(_spawner: Spawner) -> ! {
     // The card detect being active low makes sense according to the Zedboard docs. Not sure
     // about write-protect though.. It seems that write protect on means that the
     // the pin is pulled high.
-    log::info!("Card detect state: {:?}", card_detect.is_low());
-    log::info!("Write protect state: {:?}", write_protect.is_high());
+    defmt::info!("Card detect state: {:?}", card_detect.is_low());
+    defmt::info!("Write protect state: {:?}", write_protect.is_high());
 
     let capabilities = sd_card_uninit.ll().capabilities();
-    log::debug!("SDIO Capabilities: {:?}", capabilities);
+    defmt::debug!("SDIO Capabilities: {:?}", capabilities);
 
     let present_state = sd_card_uninit.ll().read_present_state();
-    log::debug!("SD present state: {:?}", present_state);
+    defmt::debug!("SD present state: {:?}", present_state);
 
     let boot_mode = BootMode::new_from_regs();
-    log::info!("Boot mode: {:?}", boot_mode);
+    defmt::info!("Boot mode: {:?}", boot_mode);
 
     let mut ticker = Ticker::every(Duration::from_millis(200));
 
@@ -104,7 +90,8 @@ async fn main(_spawner: Spawner) -> ! {
     let sd_result = sd_card_uninit.initialize();
     let sd_card = match sd_result {
         Ok(card) => {
-            log::info!("SD card info: {:?}", card.card_info());
+            // The card info contains types of `embedded-sdmmc-types`, which has no defmt support.
+            defmt::info!("SD card info: {:?}", defmt::Debug2Format(card.card_info()));
             card
         }
         Err(e) => {
@@ -115,7 +102,7 @@ async fn main(_spawner: Spawner) -> ! {
     let mut buf: [u8; 4096] = [0; 4096];
 
     if LOW_LEVEL_TESTS {
-        log::info!("doing SD card low-level tests");
+        defmt::info!("doing SD card low-level tests");
 
         let mut cache_buf: [u8; 4096] = [0; 4096];
 
@@ -141,13 +128,13 @@ async fn main(_spawner: Spawner) -> ! {
 
         sd_card.write_multiple_blocks(&cache_buf, 0x1000).unwrap();
 
-        log::info!("SD card low-level tests success");
+        defmt::info!("SD card low-level tests success");
     }
 
     buf.fill(0);
 
     if SDMMC_RS_TESTS {
-        log::info!("doing SD card embedded-sdmmc-rs tests");
+        defmt::info!("doing SD card embedded-sdmmc-rs tests");
 
         // Now let's look for volumes (also known as partitions) on our block device.
         // To do this we need a Volume Manager. It will take ownership of the block device.
@@ -160,10 +147,10 @@ async fn main(_spawner: Spawner) -> ! {
 
         // Open the root directory (mutably borrows from the volume).
         let mut current_dir = volume0.open_root_dir().unwrap();
-        log::info!("iterating root directory");
+        defmt::info!("iterating root directory");
         current_dir
             .iterate_dir(|entry| {
-                log::info!("{:?}", entry);
+                defmt::info!("{:?}", entry);
                 core::ops::ControlFlow::Continue(())
             })
             .unwrap();
@@ -202,7 +189,7 @@ async fn main(_spawner: Spawner) -> ! {
 
         current_dir.close().unwrap();
 
-        log::info!("SD card embedded-sdmmc-rs success");
+        defmt::info!("SD card embedded-sdmmc-rs success");
     }
 
     loop {
@@ -245,6 +232,6 @@ fn prefetch_handler(_faulting_addr: usize) -> ! {
 /// Panic handler
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    error!("Panic: {info:?}");
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {}
 }

@@ -79,6 +79,7 @@ pub const PAGE_SIZE: usize = 0x100;
 pub const SECTOR_SIZE: usize = 0x10000;
 
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct BaseDeviceId {
     manufacturer_id: u8,
     device_id: u16,
@@ -120,6 +121,7 @@ impl BaseDeviceId {
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ExtendedDeviceId {
     base: BaseDeviceId,
     id_cfi_len: u8,

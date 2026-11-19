@@ -786,6 +786,7 @@ mod shared {
 
 /// Possibly critical errors.
 #[derive(Debug, Clone, Copy, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct EthErrors {
     /// According to the TMR, p.551, this condition implies a packet is dropped because the
     /// packet buffer is full. It occurs occasionally when the controller is unable to process
@@ -812,6 +813,7 @@ pub struct EthErrors {
 
 /// Result of the interrupt handler.
 #[derive(Debug, Clone, Copy, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct InterruptResult {
     /// A frame was received.
     pub frame_received: bool,

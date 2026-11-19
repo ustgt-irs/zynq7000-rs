@@ -11,6 +11,7 @@ use super::{EthernetId, PsEthernet as _};
 
 /// Link speed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Speed {
     /// 10 Mbit/s.
     Mbps10,
@@ -33,6 +34,7 @@ impl Speed {
 
 /// Duplex mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Duplex {
     /// Half duplex.
     Half,
@@ -42,6 +44,7 @@ pub enum Duplex {
 
 /// Divisors for the Ethernet reference clock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ClockDivisors {
     /// Divisor 0.
     pub divisor_0: u6,
@@ -130,6 +133,7 @@ impl ClockConfig {
 /// after a completed auto-negotiation process. The necessary clock configurations for each speed
 /// setting can be pre-calculated and stored using this data structure.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ClockDivSet {
     /// Divisors for 10 Mbit/s.
     pub cfg_10_mbps: ClockDivisors,

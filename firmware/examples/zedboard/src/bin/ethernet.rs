@@ -30,8 +30,8 @@ use embassy_executor::Spawner;
 use embassy_net::{Ipv4Cidr, StaticConfigV4, tcp::TcpSocket, udp::UdpSocket};
 use embassy_time::{Duration, Timer};
 use embedded_io_async::Write as _;
-use log::{LevelFilter, debug, error, info, warn};
 use rand::{Rng, SeedableRng};
+use z7_defmt_rtt as _;
 use zedboard::PS_CLOCK_FREQUENCY;
 use zedboard_bsp::phy_marvell;
 use zynq7000_hal::{
@@ -45,7 +45,6 @@ use zynq7000_hal::{
     gpio,
     gtc::GlobalTimerCounter,
     mmu::{section_attrs::SHAREABLE_DEVICE, update_l1_table},
-    uart,
 };
 
 use zynq7000_rt as _;
@@ -53,7 +52,6 @@ use zynq7000_rt as _;
 const USE_DHCP: bool = true;
 const UDP_AND_TCP_PORT: u16 = 8000;
 const PRINT_PACKET_STATS: bool = false;
-const LOG_LEVEL: LevelFilter = LevelFilter::Info;
 const NUM_RX_SLOTS: usize = 16;
 const NUM_TX_SLOTS: usize = 16;
 
@@ -62,8 +60,6 @@ const STATIC_IPV4_CONFIG: StaticConfigV4 = StaticConfigV4 {
     gateway: None,
     dns_servers: heapless::Vec::new(),
 };
-
-const INIT_STRING: &str = "-- Zynq 7000 Zedboard Ethernet Example --\n\r";
 
 // Unicast address with OUI of the Marvell 88E1518 PHY.
 const MAC_ADDRESS: [u8; 6] = [
@@ -124,17 +120,17 @@ async fn udp_task(mut udp: UdpSocket<'static>) -> ! {
     loop {
         match udp.recv_from(&mut rx_buf).await {
             Ok((data, meta)) => {
-                log::info!("udp rx {data} bytes from {meta:?}");
+                defmt::info!("udp rx {} bytes from {:?}", data, meta);
                 match udp.send_to(&rx_buf[0..data], meta).await {
                     Ok(_) => (),
                     Err(e) => {
-                        log::warn!("udp send error: {e:?}");
+                        defmt::warn!("udp send error: {:?}", e);
                         Timer::after_millis(100).await;
                     }
                 }
             }
             Err(e) => {
-                log::warn!("udp receive error: {e:?}");
+                defmt::warn!("udp receive error: {:?}", e);
                 Timer::after_millis(100).await;
             }
         }
@@ -149,48 +145,48 @@ async fn tcp_task(mut tcp: TcpSocket<'static>) -> ! {
     loop {
         match tcp.accept(UDP_AND_TCP_PORT).await {
             Ok(_) => {
-                log::info!("tcp connection to {:?} accepted", tcp.remote_endpoint());
+                defmt::info!("tcp connection to {:?} accepted", tcp.remote_endpoint());
                 loop {
                     if tcp.may_recv() {
                         match tcp.read(&mut rx_buf).await {
                             Ok(0) => {
-                                log::info!("tcp EOF received");
+                                defmt::info!("tcp EOF received");
                                 tcp.close();
                             }
                             Ok(read_bytes) => {
-                                log::info!("tcp rx {read_bytes} bytes");
+                                defmt::info!("tcp rx {} bytes", read_bytes);
                                 if tcp.may_send() {
                                     match tcp.write_all(&rx_buf[0..read_bytes]).await {
                                         Ok(_) => continue,
                                         Err(e) => {
-                                            log::warn!("tcp error when writing: {e:?}");
+                                            defmt::warn!("tcp error when writing: {:?}", e);
                                             Timer::after_millis(100).await;
                                         }
                                     }
                                 } else {
-                                    log::warn!("tcp remote endpoint not writeable");
+                                    defmt::warn!("tcp remote endpoint not writeable");
                                     continue;
                                 }
                             }
                             Err(_) => {
-                                log::warn!("tcp connection reset by remote endpoint.");
+                                defmt::warn!("tcp connection reset by remote endpoint.");
                                 tcp.close();
                             }
                         }
                     }
                     if !tcp.may_send() && !tcp.may_recv() {
-                        log::info!("tcp send and receive side closed");
+                        defmt::info!("tcp send and receive side closed");
                         tcp.close();
                     }
                     if tcp.state() == embassy_net::tcp::State::Closed {
-                        log::info!("tcp socket closed, exiting loop");
+                        defmt::info!("tcp socket closed, exiting loop");
                         break;
                     }
                     Timer::after_millis(100).await;
                 }
             }
             Err(e) => {
-                log::warn!("tcp error accepting connection: {e:?}");
+                defmt::warn!("tcp error accepting connection: {:?}", e);
                 Timer::after_millis(100).await;
                 continue;
             }
@@ -215,22 +211,10 @@ async fn main(spawner: Spawner) -> ! {
     let gtc = GlobalTimerCounter::new(periphs.gtc, clocks.arm_clocks());
     zynq7000_hal::time_driver_gtc::init(clocks.arm_clocks(), gtc);
 
-    // Set up the UART, we are logging with it.
-    let uart_clk_config = uart::ClockConfig::new_autocalc_with_error(clocks.io_clocks(), 115200)
-        .unwrap()
-        .0;
-    let mut uart = uart::Uart::new_with_mio_for_uart_1(
-        periphs.uart_1,
-        uart::Config::new_with_clk_config(uart_clk_config),
-        (gpio_pins.mio.mio48, gpio_pins.mio.mio49),
-    )
-    .unwrap();
-    uart.write_all(INIT_STRING.as_bytes());
-    // Safety: We are not multi-threaded yet.
-    zynq7000_hal::log::uart_blocking::init_with_busy_flag(uart, LOG_LEVEL, false);
+    defmt::println!("-- Zynq 7000 Zedboard Ethernet Example --");
 
     let boot_mode = BootMode::new_from_regs();
-    info!("Boot mode: {:?}", boot_mode);
+    defmt::info!("Boot mode: {:?}", boot_mode);
 
     static ETH_RX_BUFS: static_cell::ConstStaticCell<[AlignedBuffer; NUM_RX_SLOTS]> =
         static_cell::ConstStaticCell::new(
@@ -257,13 +241,14 @@ async fn main(spawner: Spawner) -> ! {
     // Unwrap okay, this is a valid peripheral.
     let eth_ll = EthernetLowLevel::new(periphs.eth_0).unwrap();
     let mod_id = eth_ll.regs.read_module_id();
-    info!("Ethernet Module ID: {mod_id:?}");
+    defmt::info!("Ethernet Module ID: {:?}", mod_id);
     assert_eq!(mod_id, 0x20118);
 
     let (clk_divs, clk_errors) = ClockDivSet::calculate_for_rgmii_and_io_clock(clocks.io_clocks());
-    debug!(
+    defmt::debug!(
         "Calculated RGMII clock configuration: {:?}, errors (missmatch from ideal rate in hertz): {:?}",
-        clk_divs, clk_errors
+        clk_divs,
+        clk_errors
     );
 
     zynq7000_hal::register_interrupt(
@@ -306,7 +291,7 @@ async fn main(spawner: Spawner) -> ! {
     eth.start();
     let (mut phy, phy_rev) = phy_marvell::Marvell88E1518Phy::new_autoprobe_addr(eth.mdio_mut())
         .expect("could not auto-detect phy");
-    info!(
+    defmt::info!(
         "Detected Marvell 88E1518 PHY with revision number: {:?}",
         phy_rev
     );
@@ -382,18 +367,18 @@ async fn main(spawner: Spawner) -> ! {
     loop {
         // Handle error messages from ethernet interrupt.
         while let Ok(msg) = receiver.try_receive() {
-            info!("Received interrupt result: {msg:?}");
+            defmt::info!("Received interrupt result: {:?}", msg);
         }
         if PRINT_PACKET_STATS {
             let sent_frames_since_last = eth.ll().regs.statistics().read_tx_count();
             if sent_frames_since_last > 0 {
                 transmitted_frames += sent_frames_since_last;
-                info!("Frame sent count: {transmitted_frames}");
+                defmt::info!("Frame sent count: {}", transmitted_frames);
             }
             let received_frames_since_last = eth.ll().regs.statistics().read_rx_count();
             if received_frames_since_last > 0 {
                 received_frames += received_frames_since_last;
-                info!("Frame received count: {received_frames}");
+                defmt::info!("Frame received count: {}", received_frames);
             }
         }
 
@@ -412,7 +397,7 @@ async fn main(spawner: Spawner) -> ! {
                 let status = phy.read_copper_status();
                 if status.auto_negotiation_complete() {
                     let extended_status = phy.read_copper_specific_status_register_1();
-                    info!(
+                    defmt::info!(
                         "link is up and auto-negotiation complete. Setting speed {:?} and duplex {:?}",
                         extended_status.speed().as_zynq7000_eth_speed().unwrap(),
                         extended_status.duplex().as_zynq7000_eth_duplex()
@@ -435,7 +420,7 @@ async fn main(spawner: Spawner) -> ! {
             IpMode::AwaitingIpConfig => {
                 if stack.is_config_up() {
                     let network_config = stack.config_v4();
-                    info!("Network configuration is up. config: {network_config:?}!",);
+                    defmt::info!("Network configuration is up. config: {:?}!", network_config,);
                     ip_mode = IpMode::StackReady;
                     mio_led.set_high();
                 } else {
@@ -447,7 +432,7 @@ async fn main(spawner: Spawner) -> ! {
                 // Periodically check for link changes.
                 if status.copper_link_status() == phy_marvell::LatchingLinkStatus::DownSinceLastRead
                 {
-                    warn!("ethernet link is down.");
+                    defmt::warn!("ethernet link is down.");
                     ip_mode = IpMode::LinkDown;
                     continue;
                 }
@@ -501,6 +486,6 @@ fn prefetch_handler(_faulting_addr: usize) -> ! {
 /// Panic handler
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    error!("Panic: {info:?}");
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {}
 }

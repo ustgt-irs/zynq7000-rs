@@ -7,16 +7,13 @@ use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_time::{Delay, Duration, Ticker};
 use embedded_hal_async::delay::DelayNs as _;
-use embedded_io::Write;
 use embedded_io_async::Read as _;
-use log::info;
+use z7_defmt_rtt as _;
 use zedboard::PS_CLOCK_FREQUENCY;
 use zynq7000::spi::FifoWrite;
 use zynq7000_hal::{
     BootMode, clocks, generic_interrupt_handler, gpio, gtc,
-    log::asynch::UartLoggerRunner,
     spi::{self, SpiAsync},
-    uart::{self, TxAsync},
 };
 
 use zynq7000_rt as _;
@@ -28,8 +25,6 @@ pub enum TestType {
 }
 
 const TEST_TYPE: TestType = TestType::Async;
-
-const INIT_STRING: &str = "-- Zynq 7000 SPI slave example --\n\r";
 
 /// Entry point which calls the embassy main method.
 #[zynq7000_rt::entry]
@@ -55,26 +50,7 @@ async fn main(spawner: Spawner) -> ! {
     let gtc = gtc::GlobalTimerCounter::new(periphs.gtc, clocks.arm_clocks());
     zynq7000_hal::time_driver_gtc::init(clocks.arm_clocks(), gtc);
 
-    // Set up the UART, we are logging with it.
-    let uart_clk_config = uart::ClockConfig::new_autocalc_with_error(clocks.io_clocks(), 115200)
-        .unwrap()
-        .0;
-    let mut uart = uart::Uart::new_with_mio_for_uart_1(
-        periphs.uart_1,
-        uart::Config::new_with_clk_config(uart_clk_config),
-        (gpio_pins.mio.mio48, gpio_pins.mio.mio49),
-    )
-    .unwrap();
-    uart.write_all(INIT_STRING.as_bytes());
-    uart.flush().unwrap();
-    Delay.delay_ms(1).await;
-
-    let (tx, _rx) = uart.split();
-    let tx_asynch = TxAsync::new(tx, true);
-    let logger_runner =
-        zynq7000_hal::log::asynch::init_with_uart_tx(log::LevelFilter::Trace, tx_asynch)
-            .expect("Failed to initialize async logger");
-    spawner.spawn(logger_task(logger_runner).unwrap());
+    defmt::println!("-- Zynq 7000 SPI slave example --");
 
     // This pin is used to select between a routing from SPI0 to OLED, or SPI0 to SPI1. Low selects
     // the SPI0 to OLED interface.
@@ -82,7 +58,7 @@ async fn main(spawner: Spawner) -> ! {
         gpio::Output::new_for_emio(gpio_pins.emio.take(15).unwrap(), gpio::PinState::High);
 
     let boot_mode = BootMode::new_from_regs();
-    info!("Boot mode: {:?}", boot_mode);
+    defmt::info!("Boot mode: {:?}", boot_mode);
 
     let mio_led = gpio::Output::new_for_mio(gpio_pins.mio.mio7, gpio::PinState::Low);
     // Just LD0-LD2 here as a simple "this example is running" indicator. See main.rs for an
@@ -125,7 +101,7 @@ async fn main(spawner: Spawner) -> ! {
     for i in 0..spi::FIFO_DEPTH / 2 {
         spi_slave.write_tx_data(i as u8);
     }
-    log::info!("SPI slave initialized, enabling interrupts and peripheral");
+    defmt::info!("SPI slave initialized, enabling interrupts and peripheral");
     spi_slave.enable_interrupts(true);
     spi_slave.enable();
 
@@ -145,10 +121,10 @@ async fn main(spawner: Spawner) -> ! {
                 .expect("creating exlusive SPI master failed");
 
         let current_rx_val = blocking_tests_small(&mut spi_master, &mut slave_rx_reader).await;
-        log::info!("blocking tests with small data blocks done");
+        defmt::info!("blocking tests with small data blocks done");
         Delay.delay_ms(10).await;
         blocking_tests_large(&mut spi_master, current_rx_val, &mut slave_rx_reader).await;
-        log::info!("blocking tests with large data blocks done");
+        defmt::info!("blocking tests with large data blocks done");
     } else {
         let spi_master = SpiAsync::new(spi_master);
         let mut spi_master =
@@ -156,13 +132,13 @@ async fn main(spawner: Spawner) -> ! {
                 .expect("creating exlusive SPI master failed");
         let current_rx_val =
             blocking_tests_small_async(&mut spi_master, &mut slave_rx_reader).await;
-        log::info!("async tests with small data blocks done");
+        defmt::info!("async tests with small data blocks done");
         Delay.delay_ms(10).await;
         blocking_tests_large_async(&mut spi_master, current_rx_val, &mut slave_rx_reader).await;
-        log::info!("blocking tests with large data blocks done");
+        defmt::info!("blocking tests with large data blocks done");
     }
 
-    log::info!("SPI slave tests done");
+    defmt::info!("SPI slave tests done");
 
     let mut ticker = Ticker::every(Duration::from_millis(1000));
     loop {
@@ -468,11 +444,6 @@ pub async fn blocking_tests_large_async(
     current_rx_val
 }
 
-#[embassy_executor::task]
-pub async fn logger_task(mut logger_task: UartLoggerRunner) {
-    logger_task.run().await;
-}
-
 static RX_DATA_WRITER: critical_section::Mutex<
     RefCell<Option<embassy_sync::pipe::Writer<'static, CriticalSectionRawMutex, 256>>>,
 > = critical_section::Mutex::new(RefCell::new(None));
@@ -556,7 +527,6 @@ fn prefetch_handler(_faulting_addr: usize) -> ! {
 /// Panic handler
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    let mut uart = unsafe { uart::Uart::steal(uart::UartId::Uart1) };
-    writeln!(uart, "panic: {}\r", info).ok();
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {}
 }

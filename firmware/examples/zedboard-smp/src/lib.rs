@@ -2,10 +2,10 @@
 
 use core::{cell::RefCell, panic::PanicInfo};
 
-use embedded_io::Write;
 use aarch32_cpu::asm::nop;
 use critical_section::Mutex;
-use zynq7000_hal::{time::Hertz, uart};
+use z7_defmt_rtt as _;
+use zynq7000_hal::time::Hertz;
 
 /// Clock was already initialized by PS7 Init TCL script or FSBL, we just read it.
 pub const PS_CLOCK_FREQUENCY: Hertz = Hertz::from_raw(33_333_333);
@@ -74,15 +74,10 @@ fn prefetch_handler(_faulting_addr: usize) -> ! {
     }
 }
 
-/// Panic handler. Steals the UART and writes directly to it rather than going through the log
-/// pipe, since the executor draining that pipe may no longer be running. The write itself runs
-/// inside a critical section, since the steal bypasses the pipe's own cross-core locking and
-/// both cores could otherwise panic (or panic while the other is mid-write) at the same time.
+/// Panic handler. defmt takes the cross-core critical section for each message, so panics on
+/// both cores do not interleave.
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    critical_section::with(|_cs| {
-        let mut uart = unsafe { uart::Uart::steal(uart::UartId::Uart1) };
-        writeln!(uart, "panic: {info}\r").ok();
-    });
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {}
 }

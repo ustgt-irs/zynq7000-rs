@@ -5,7 +5,7 @@ use aarch32_cpu::asm::nop;
 use core::panic::PanicInfo;
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Ticker};
-use log::error;
+use z7_defmt_rtt as _;
 use zynq7000_hal::{clocks, generic_interrupt_handler, gpio, gtc, time::Hertz};
 
 // Define the clock frequency as a constant
@@ -67,6 +67,6 @@ fn prefetch_handler(_faulting_addr: usize) -> ! {
 /// Panic handler
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    error!("Panic: {info:?}");
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {}
 }
