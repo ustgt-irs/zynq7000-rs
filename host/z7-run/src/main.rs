@@ -302,6 +302,7 @@ impl FlashProgressBars {
 
     fn operation_label(operation: ProgressOperation) -> &'static str {
         match operation {
+            ProgressOperation::Compare => "Comparing",
             ProgressOperation::Fill => "Reading flash",
             ProgressOperation::Erase => "Erasing",
             ProgressOperation::Program => "Programming",
