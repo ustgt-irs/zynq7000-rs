@@ -4,9 +4,32 @@ Zynq 7000 Embedded Rust Support
 This crate collection provides support to write Embedded Rust applications for the AMD Zynq 7000
 family of SoCs.
 
-<p align="center">
-  <img src="./ferris-zedboard.jpeg" alt="Ferris on the Zedboard" width="400" />
-</p>
+# Features
+
+- Run-time crate [`zynq7000-rt`](./firmware/zynq7000-rt) with startup code for both Cortex-A9
+  cores, including SMP support.
+- Peripheral access crate (PAC) [`zynq7000`](./firmware/zynq7000) for the processing system
+  peripherals.
+- Hardware abstraction layer (HAL) [`zynq7000-hal`](./firmware/zynq7000-hal), with
+  [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) and `embedded-io` support:
+  - Clocks, DDR, MMU, L1 and L2 cache and GIC interrupt handling.
+  - GPIO (MIO and EMIO), UART, SPI and I2C (master and slave), QSPI, SD card, TTC with PWM,
+    global and private timers, system watchdog and PL bitstream programming.
+  - Async drivers for GPIO, UART TX and SPI, with `embedded-hal-async` and `embedded-io-async`
+    support.
+  - Ethernet drivers for [smoltcp](https://github.com/smoltcp-rs/smoltcp) and
+    [embassy-net](https://embassy.dev/).
+  - An [Embassy](https://embassy.dev/) time driver based on the global timer.
+- [`defmt`](https://github.com/knurling-rs/defmt) logging over RTT with
+  [`z7-defmt-rtt`](./firmware/z7-defmt-rtt).
+- Zedboard support: a BSP, a first-stage bootloader with QSPI boot and a QSPI flasher.
+- Examples: bare-metal, Embassy and dual-core (SMP).
+- Host tools:
+  - [`z7-run`](./host/z7-run), a `probe-rs` based runner which initializes the PS, flashes the
+    bitstream and runs the app without `xsct` or `hw_server`.
+  - Boot image library, `ps7_init.tcl` extractor and MMU table generator.
+- No Vitis SDK or C toolchain required to build and run software. Vivado is only needed for
+  custom FPGA designs.
 
 # List of crates
 
