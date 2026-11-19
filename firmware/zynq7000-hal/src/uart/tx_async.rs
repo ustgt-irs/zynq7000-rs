@@ -66,9 +66,9 @@ pub unsafe fn on_interrupt_tx(peripheral: UartId) {
     tx_with_irq.clear_interrupts();
 
     let context = &TX_CONTEXTS[idx];
-    // `Acquire` pairs with the `Release` store in `TxFuture::new`/`poll`/`Drop`: seeing a
-    // non-null pointer here guarantees `transfer_len`/`progress` below are the values published
-    // together with it, not stale ones from a previous transfer.
+    // `Acquire` pairs with the `Release` stores in `start_transfer`, `poll_transfer_done` and the
+    // guard's `Drop`: seeing a non-null pointer here guarantees `transfer_len`/`progress` below
+    // are the values published together with it, not stale ones from a previous transfer.
     let raw_data_ptr = context.raw_data.load(Ordering::Acquire);
     // No transfer active.
     if raw_data_ptr.is_null() {
@@ -76,13 +76,13 @@ pub unsafe fn on_interrupt_tx(peripheral: UartId) {
     }
     let slice_len = context.transfer_len.load(Ordering::Relaxed);
     let mut progress = context.progress.load(Ordering::Relaxed);
-    // Safety: We documented that the user provided slice must outlive the future, so we convert
-    // the raw pointer back to the slice here.
+    // SAFETY: The transfer guard borrows the slice and clears the pointer before the borrow
+    // ends.
     let slice = unsafe { core::slice::from_raw_parts(raw_data_ptr as *const u8, slice_len) };
 
     if (progress >= slice_len && interrupt_status.tx_empty()) || slice_len == 0 {
         // Transfer is done. `Release` publishes the final `progress` value to whichever context
-        // observes `TX_DONE` via the `Acquire` swap in `poll`.
+        // observes `TX_DONE` via the `Acquire` swap in `poll_transfer_done`.
         TX_DONE[idx].store(true, Ordering::Release);
         tx_with_irq.disable_interrupts();
         tx_with_irq.clear_interrupts();
@@ -110,111 +110,37 @@ pub unsafe fn on_interrupt_tx(peripheral: UartId) {
     tx_with_irq.enable_interrupts(remaining > FIFO_DEPTH);
 }
 
-/// Transmission future for UART TX.
-pub struct TxFuture<'uart, 'buf> {
-    id: UartId,
-    buffer_empty: bool,
-    // Set once `poll` observes completion. `TX_DONE` itself is not enough to tell completion
-    // and cancellation apart in `Drop`, because `poll` already swaps it back to `false` as
-    // part of observing it.
-    completed: bool,
-    phantom: core::marker::PhantomData<(&'uart (), &'buf ())>,
+/// Returns the number of written bytes once the interrupt handler signals completion.
+fn poll_transfer_done(id: UartId, cx: &mut core::task::Context<'_>) -> core::task::Poll<usize> {
+    let idx = id as usize;
+    UART_TX_WAKERS[idx].register(cx.waker());
+    // `Acquire` pairs with the `Release` store in `on_interrupt_tx`.
+    if !TX_DONE[idx].swap(false, Ordering::Acquire) {
+        return core::task::Poll::Pending;
+    }
+    let context = &TX_CONTEXTS[idx];
+    // `Release` pairs with the `Acquire` load in `on_interrupt_tx`, so a spurious interrupt for
+    // this slot after completion can never see a dangling pointer.
+    context
+        .raw_data
+        .store(core::ptr::null_mut(), Ordering::Release);
+    core::task::Poll::Ready(context.progress.load(Ordering::Relaxed))
 }
 
-impl<'uart, 'buf> TxFuture<'uart, 'buf> {
-    /// Constructor for TX future.
-    pub fn new(tx_with_irq: &'uart mut Tx, data: &'buf [u8]) -> TxFuture<'uart, 'buf> {
-        if data.is_empty() {
-            // Nothing to transfer, return a future which is immediately ready.
-            return TxFuture {
-                id: tx_with_irq.uart_id(),
-                buffer_empty: true,
-                completed: false,
-                phantom: PhantomData,
-            };
-        }
-        let idx = tx_with_irq.uart_id() as usize;
-        TX_DONE[idx].store(false, Ordering::Relaxed);
-        tx_with_irq.disable_interrupts();
-        tx_with_irq.disable();
+/// Stops the transfer on completion and on cancellation, because the interrupt handler reads
+/// from the buffer until then.
+struct TransferGuard<'tx, 'buf>(&'tx mut Tx, PhantomData<&'buf [u8]>);
 
-        let init_fill_count = core::cmp::min(data.len(), FIFO_DEPTH);
-        let context = &TX_CONTEXTS[idx];
-        // Publish the guarded fields before opening the gate (`raw_data`) with `Release`, so a
-        // reader that observes `raw_data` non-null via the `Acquire` load in `on_interrupt_tx`
-        // is guaranteed to see these too, rather than stale values from a previous transfer.
-        context.transfer_len.store(data.len(), Ordering::Relaxed);
-        context.progress.store(init_fill_count, Ordering::Relaxed);
+impl Drop for TransferGuard<'_, '_> {
+    fn drop(&mut self) {
+        self.0.disable_interrupts();
+        // Clear the buffer pointer so a spurious or future interrupt for this UART can never
+        // dereference it. After completion, this was already done and is harmless.
+        let context = &TX_CONTEXTS[self.0.uart_id() as usize];
+        context.progress.store(0, Ordering::Relaxed);
         context
             .raw_data
-            .store(data.as_ptr() as *mut u8, Ordering::Release);
-        // Apparently, we need to enable the UART before we are able to write something into
-        // the FIFO.
-        tx_with_irq.enable(false);
-        if data.len() > FIFO_DEPTH {
-            tx_with_irq.regs.write_tx_fifo_trigger(
-                FifoTrigger::builder()
-                    .with_trigger(u6::new((FIFO_DEPTH / 2) as u8))
-                    .build(),
-            );
-        }
-        for data in data.iter().take(init_fill_count) {
-            tx_with_irq.write_fifo_unchecked(*data);
-        }
-        tx_with_irq.enable_interrupts(data.len() > FIFO_DEPTH);
-
-        Self {
-            id: tx_with_irq.uart_id(),
-            buffer_empty: false,
-            completed: false,
-            phantom: PhantomData,
-        }
-    }
-}
-
-impl Future for TxFuture<'_, '_> {
-    type Output = usize;
-
-    fn poll(
-        mut self: core::pin::Pin<&mut Self>,
-        cx: &mut core::task::Context<'_>,
-    ) -> core::task::Poll<Self::Output> {
-        if self.buffer_empty {
-            return core::task::Poll::Ready(0);
-        }
-        UART_TX_WAKERS[self.id as usize].register(cx.waker());
-        if TX_DONE[self.id as usize].swap(false, Ordering::Acquire) {
-            let context = &TX_CONTEXTS[self.id as usize];
-            // Release: pairs with the Acquire load in `on_interrupt_tx`, so a spurious interrupt
-            // for this slot after completion can never see a dangling pointer.
-            context
-                .raw_data
-                .store(core::ptr::null_mut(), Ordering::Release);
-            let progress = context.progress.load(Ordering::Relaxed);
-            self.completed = true;
-            return core::task::Poll::Ready(progress);
-        }
-        core::task::Poll::Pending
-    }
-}
-
-impl Drop for TxFuture<'_, '_> {
-    fn drop(&mut self) {
-        // SAFETY: Only the TX interrupts are disabled.
-        let mut tx = unsafe { Tx::steal(self.id) };
-        tx.disable_interrupts();
-        // On cancellation, clear the stale buffer pointer so a spurious or future interrupt for
-        // this UART can never dereference it. `self.completed` (set inside `poll`'s `Ready` arm)
-        // is what actually distinguishes cancellation from normal completion here, since
-        // `TX_DONE` itself is already swapped back to `false` by the time a completed future is
-        // dropped.
-        if !self.buffer_empty && !self.completed {
-            let context = &TX_CONTEXTS[self.id as usize];
-            context.progress.store(0, Ordering::Relaxed);
-            context
-                .raw_data
-                .store(core::ptr::null_mut(), Ordering::Release);
-        }
+            .store(core::ptr::null_mut(), Ordering::Release);
     }
 }
 
@@ -229,12 +155,6 @@ impl TxAsync {
     /// The second argument specifies whether the [on_interrupt_tx] function will be registered
     /// in the HAL interrupt map. You might need to skip this in case you have your own
     /// interrupt handler which also handles RX interrupts.
-    ///
-    /// # Safety
-    ///
-    /// This function stores the raw pointer of the passed data slice. The user MUST ensure
-    /// that the slice outlives the data structure.
-    /// This case was considered exotic enough to not justify an `unsafe` API.
     pub fn new(tx: Tx, register_interrupt_handler: bool) -> Self {
         if register_interrupt_handler {
             match tx.uart_id() {
@@ -268,12 +188,54 @@ impl TxAsync {
         Self { tx }
     }
 
-    /// Write a buffer asynchronously.
+    /// Write a buffer asynchronously and return the number of written bytes.
     ///
-    /// This implementation is not side effect free, and a started future might have already
-    /// written part of the passed buffer.
-    pub fn write<'buf>(&mut self, buf: &'buf [u8]) -> TxFuture<'_, 'buf> {
-        TxFuture::new(&mut self.tx, buf)
+    /// The transfer starts on the first poll. Dropping the future stops the transfer, but part of
+    /// the buffer might already have been written.
+    ///
+    /// Leaking the future after the first poll, for example with [core::mem::forget], is not
+    /// supported. The interrupt handler would keep reading from the buffer after the borrow ended.
+    pub async fn write(&mut self, buf: &[u8]) -> usize {
+        if buf.is_empty() {
+            return 0;
+        }
+        let id = self.tx.uart_id();
+        let _guard = self.start_transfer(buf);
+        core::future::poll_fn(|cx| poll_transfer_done(id, cx)).await
+    }
+
+    fn start_transfer<'tx, 'buf>(&'tx mut self, data: &'buf [u8]) -> TransferGuard<'tx, 'buf> {
+        let tx = &mut self.tx;
+        let idx = tx.uart_id() as usize;
+        TX_DONE[idx].store(false, Ordering::Relaxed);
+        tx.disable_interrupts();
+        tx.disable();
+
+        let init_fill_count = core::cmp::min(data.len(), FIFO_DEPTH);
+        let context = &TX_CONTEXTS[idx];
+        // Publish the guarded fields before opening the gate (`raw_data`) with `Release`, so a
+        // reader that observes `raw_data` non-null via the `Acquire` load in `on_interrupt_tx`
+        // is guaranteed to see these too, rather than stale values from a previous transfer.
+        context.transfer_len.store(data.len(), Ordering::Relaxed);
+        context.progress.store(init_fill_count, Ordering::Relaxed);
+        context
+            .raw_data
+            .store(data.as_ptr() as *mut u8, Ordering::Release);
+        // Apparently, we need to enable the UART before we are able to write something into
+        // the FIFO.
+        tx.enable(false);
+        if data.len() > FIFO_DEPTH {
+            tx.regs.write_tx_fifo_trigger(
+                FifoTrigger::builder()
+                    .with_trigger(u6::new((FIFO_DEPTH / 2) as u8))
+                    .build(),
+            );
+        }
+        for data in data.iter().take(init_fill_count) {
+            tx.write_fifo_unchecked(*data);
+        }
+        tx.enable_interrupts(data.len() > FIFO_DEPTH);
+        TransferGuard(tx, PhantomData)
     }
 
     /// Release the underlying blocking TX driver.

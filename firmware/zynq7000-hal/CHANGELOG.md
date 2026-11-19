@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   register block is accessed with `CpuPrivateTimerRegs::regs` instead of the public field.
 - `CpuPrivateTimerRegs::steal` and `CpuPrivateTimer::steal` are now `unsafe`.
 - `l2_cache::disable` is now `unsafe`. The L2 cache must be cleaned before.
+- `uart::TxAsync::write` is an `async fn` now. The `TxFuture` type was removed.
+- Async UART TX transfers now start on the first poll of the future, not when the method
+  is called.
 
 ## Added
 
