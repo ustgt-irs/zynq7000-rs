@@ -3,10 +3,11 @@ use arbitrary_int::u14;
 
 #[cfg(feature = "eth-cache-maintenance")]
 use crate::cache::{self, CACHE_LINE_SIZE};
+use crate::eth::{DriverError, ErrorHandler, rx_descr, tx_descr};
 pub use crate::eth::{EthernetId, InterruptResult};
-use crate::eth::{rx_descr, tx_descr};
 
 /// This interrupt handler should be called when a Gigabit Ethernet interrupt occurs.
+#[inline]
 pub fn on_interrupt(eth_id: EthernetId) -> InterruptResult {
     super::on_interrupt(eth_id, false, false)
 }
@@ -52,20 +53,6 @@ impl SmoltcpRxToken<'_> {
         cache::invalidate_data_cache_range(self.rx_buf.0.as_ptr() as u32, clean_invalidate_len)
             .expect("RX buffer or buffer size not aligned to cache line size");
 
-        #[cfg(feature = "eth-packet-trace")]
-        {
-            let data = &self.rx_buf.0[0..self.rx_size];
-            #[cfg(feature = "defmt")]
-            {
-                defmt::debug!("eth rx {} bytes", self.rx_size);
-                defmt::trace!("rx data: {:x}", data);
-            }
-            #[cfg(not(feature = "defmt"))]
-            {
-                log::debug!("eth rx {} bytes", self.rx_size);
-                log::trace!("rx data: {:x?}", data);
-            }
-        }
         let result = f(&mut self.rx_buf.0[0..self.rx_size]);
         self.descr_list.clear_slot(self.slot_index);
 
@@ -118,20 +105,6 @@ impl SmoltcpTxToken<'_> {
         cache::clean_data_cache_range(buffer.0.as_ptr() as u32, clean_invalidate_len)
             .expect("TX buffer or buffer size not aligned to cache line size");
 
-        #[cfg(feature = "eth-packet-trace")]
-        {
-            let data = &buffer.0[0..len];
-            #[cfg(feature = "defmt")]
-            {
-                defmt::debug!("eth tx {} bytes", len);
-                defmt::trace!("tx data: {:x}", data);
-            }
-            #[cfg(not(feature = "defmt"))]
-            {
-                log::debug!("eth tx {} bytes", len);
-                log::trace!("tx data: {:x?}", data);
-            }
-        }
         self.descr_list
             .prepare_transfer_unchecked(Some(addr), u14::new(len as u16), true, false);
         // SAFETY: Only the start TX bit is set.
@@ -145,9 +118,30 @@ impl SmoltcpTxToken<'_> {
 }
 
 /// smoltcp driver.
-pub struct Driver(CommonSmoltcpDriver);
+///
+/// Errors are reported to the [ErrorHandler]. The default `()` handler ignores them.
+pub struct Driver<ErrHandler = ()>(CommonSmoltcpDriver<ErrHandler>);
 
-impl smoltcp::phy::Device for Driver {
+impl<ErrHandler: ErrorHandler> Driver<ErrHandler> {
+    /// Create the driver. The TX burst length is the number of TX descriptors.
+    pub fn new(
+        eth: &super::Ethernet,
+        mac_addr: [u8; 6],
+        bufs: DescriptorsAndBuffers,
+        error_handler: ErrHandler,
+    ) -> Self {
+        let tx_burst_len = bufs.tx_burst_len();
+        Self(CommonSmoltcpDriver::new(
+            eth.id(),
+            mac_addr,
+            bufs,
+            tx_burst_len,
+            error_handler,
+        ))
+    }
+}
+
+impl<ErrHandler: ErrorHandler> smoltcp::phy::Device for Driver<ErrHandler> {
     type RxToken<'a>
         = SmoltcpRxToken<'a>
     where
@@ -219,25 +213,28 @@ impl DescriptorsAndBuffers {
     }
 }
 
-pub(crate) struct CommonSmoltcpDriver {
+pub(crate) struct CommonSmoltcpDriver<ErrHandler> {
     pub eth_id: super::EthernetId,
     pub mac_addr: [u8; 6],
     pub bufs: DescriptorsAndBuffers,
     pub burst_size: usize,
+    error_handler: ErrHandler,
 }
 
-impl CommonSmoltcpDriver {
+impl<ErrHandler: ErrorHandler> CommonSmoltcpDriver<ErrHandler> {
     pub fn new(
         eth_id: super::EthernetId,
         mac_addr: [u8; 6],
         bufs: DescriptorsAndBuffers,
         burst_size: usize,
+        error_handler: ErrHandler,
     ) -> Self {
         Self {
             burst_size,
             eth_id,
             mac_addr,
             bufs,
+            error_handler,
         }
     }
 
@@ -246,26 +243,16 @@ impl CommonSmoltcpDriver {
             let result = self.bufs.tx_descr.check_and_handle_completed_transfer();
             match result {
                 tx_descr::BusyHandlingResult::TxError(tx_error) => {
-                    // TODO: An ideal error reporting system would send a message to the user,
-                    // but we would need to introduce an abstraction for that..
-                    // For now, we log unexpected checksum errors and other errors.
-                    if let Some(cksum_error) = tx_error.checksum_generation {
-                        // These can occur for ICMP packets.
-                        if cksum_error
-                            != tx_descr::TransmitChecksumGenerationStatus::PacketNotTcpUdp
-                            && cksum_error
-                                != tx_descr::TransmitChecksumGenerationStatus::NotVlanOrSnapOrIp
-                        {
-                            #[cfg(feature = "defmt")]
-                            defmt::warn!("TX checksum generation error: {:?}", tx_error);
-                            #[cfg(not(feature = "defmt"))]
-                            log::warn!("TX checksum generation error: {:?}", tx_error);
-                        }
-                    } else {
-                        #[cfg(feature = "defmt")]
-                        defmt::warn!("TX error: {:?}", tx_error);
-                        #[cfg(not(feature = "defmt"))]
-                        log::warn!("TX error: {:?}", tx_error);
+                    // These checksum generation errors are expected for ICMP packets.
+                    let expected = matches!(
+                        tx_error.checksum_generation,
+                        Some(
+                            tx_descr::TransmitChecksumGenerationStatus::PacketNotTcpUdp
+                                | tx_descr::TransmitChecksumGenerationStatus::NotVlanOrSnapOrIp
+                        )
+                    );
+                    if !expected {
+                        self.error_handler.on_error(DriverError::Tx(tx_error));
                     }
                 }
                 tx_descr::BusyHandlingResult::SlotHandled(_) => (),
@@ -277,12 +264,6 @@ impl CommonSmoltcpDriver {
     pub fn receive(&mut self) -> Option<(SmoltcpRxToken<'_>, SmoltcpTxToken<'_>)> {
         self.handle_completed_tx_transfers();
         if self.bufs.tx_descr.full() {
-            // TODO: When introducing an abstraction for notifying the user, send a message
-            // for this case.
-            #[cfg(feature = "defmt")]
-            defmt::warn!("TX descriptor queue is full");
-            #[cfg(not(feature = "defmt"))]
-            log::warn!("TX descriptor queue is full");
             return None;
         }
         match self.bufs.rx_descr.scan_and_handle_next_received_frame(true) {
@@ -291,21 +272,8 @@ impl CommonSmoltcpDriver {
             rx_descr::FrameScanResult::SingleFrame {
                 index,
                 size,
-                status: _status,
+                status: _,
             } => {
-                #[cfg(all(feature = "eth-packet-trace", feature = "defmt"))]
-                defmt::trace!(
-                    "eth rx frame, fsc status {:?}, cksum status {:?}",
-                    _status.fcs_status(),
-                    _status.type_id_match_info_or_chksum_status()
-                );
-                #[cfg(all(feature = "eth-packet-trace", not(feature = "defmt")))]
-                log::trace!(
-                    "eth rx frame, fsc status {:?}, cksum status {:?}",
-                    _status.fcs_status(),
-                    _status.type_id_match_info_or_chksum_status()
-                );
-
                 let rx_buf = self.bufs.rx_bufs.get_mut(index).unwrap();
                 Some((
                     SmoltcpRxToken {
@@ -325,13 +293,17 @@ impl CommonSmoltcpDriver {
                 first_slot_index: _,
                 last_slot_index: _,
             } => {
-                // We can not really handle multi-slot frames.. this should never happen.
+                // This should never happen, the RX buffers are large enough for one frame.
+                self.error_handler.on_error(DriverError::MultiSlotFrame);
                 None
             }
             rx_descr::FrameScanResult::BrokenFragments {
                 first_slot_index: _,
                 last_slot_index: _,
-            } => None,
+            } => {
+                self.error_handler.on_error(DriverError::BrokenFragments);
+                None
+            }
         }
     }
 
@@ -339,12 +311,6 @@ impl CommonSmoltcpDriver {
         // Handle any completed frames first.
         self.handle_completed_tx_transfers();
         if self.bufs.tx_descr.full() {
-            // TODO: When introducing an abstraction for notifying the user, send a message
-            // for this case.
-            #[cfg(feature = "defmt")]
-            defmt::warn!("TX descriptor queue is full");
-            #[cfg(not(feature = "defmt"))]
-            log::warn!("TX descriptor queue is full");
             return None;
         }
         Some(SmoltcpTxToken {

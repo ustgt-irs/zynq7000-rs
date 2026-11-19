@@ -23,6 +23,7 @@ pub enum Speed {
 
 impl Speed {
     /// RGMII clock rate for the speed.
+    #[inline]
     pub const fn rgmii_clk_rate(&self) -> Hertz {
         match self {
             Speed::Mbps10 => Hertz::from_raw(2_500_000),
@@ -54,6 +55,7 @@ pub struct ClockDivisors {
 
 impl ClockDivisors {
     /// Create the divisors.
+    #[inline]
     pub const fn new(divisor_0: u6, divisor_1: u6) -> Self {
         Self {
             divisor_0,
@@ -63,6 +65,7 @@ impl ClockDivisors {
 
     /// Calls [Self::calculate_for_rgmii], assuming that the IO clock is the reference clock,
     /// which is the default clock for the Ethernet module.
+    #[inline]
     pub fn calculate_for_rgmii_and_io_clock(
         io_clks: &IoClocks,
         target_speed: Speed,
@@ -117,6 +120,7 @@ pub struct ClockConfig {
 
 impl ClockConfig {
     /// Create a configuration sourced from the IO PLL.
+    #[inline]
     pub const fn new(divs: ClockDivisors) -> Self {
         Self {
             src_sel: zynq7000::slcr::clocks::SrcSelIo::IoPll,
@@ -145,6 +149,7 @@ pub struct ClockDivSet {
 
 impl ClockDivSet {
     /// Create a new set.
+    #[inline]
     pub const fn new(
         cfg_10_mbps: ClockDivisors,
         cfg_100_mbps: ClockDivisors,
@@ -169,6 +174,7 @@ impl ClockDivSet {
 
     /// Calls [Self::calculate_for_rgmii], assuming that the IO clock is the reference clock,
     /// which is the default clock for the Ethernet module.
+    #[inline]
     pub fn calculate_for_rgmii_and_io_clock(io_clks: &IoClocks) -> (Self, [u32; 3]) {
         Self::calculate_for_rgmii(io_clks.ref_clk())
     }
@@ -192,6 +198,94 @@ impl ClockDivSet {
             Self::new(cfg_10_mbps, cfg_100_mbps, cfg_1000_mbps),
             [error_10_mbps, error_100_mbps, error_1000_mbps],
         )
+    }
+}
+
+/// Selected TX statistics counters.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct TxStatistics {
+    /// Frames transmitted without an error, excluding pause frames.
+    pub frames: u64,
+    /// Octets transmitted without an error.
+    pub octets: u64,
+    /// Transmit underruns.
+    pub underruns: u64,
+    /// Frames transmitted with a late collision.
+    pub late_collisions: u64,
+    /// Frames not transmitted due to excessive collisions.
+    pub excessive_collisions: u64,
+}
+
+impl core::ops::AddAssign for TxStatistics {
+    #[inline]
+    fn add_assign(&mut self, rhs: Self) {
+        self.frames = self.frames.saturating_add(rhs.frames);
+        self.octets = self.octets.saturating_add(rhs.octets);
+        self.underruns = self.underruns.saturating_add(rhs.underruns);
+        self.late_collisions = self.late_collisions.saturating_add(rhs.late_collisions);
+        self.excessive_collisions = self
+            .excessive_collisions
+            .saturating_add(rhs.excessive_collisions);
+    }
+}
+
+/// Selected RX statistics counters.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct RxStatistics {
+    /// Frames received without an error, excluding pause frames.
+    pub frames: u64,
+    /// Octets received without an error.
+    pub octets: u64,
+    /// Frames received with an FCS error.
+    pub fcs_errors: u64,
+    /// Frames received with a length field error.
+    pub length_field_errors: u64,
+    /// Frames received with a symbol error.
+    pub symbol_errors: u64,
+    /// Frames received with an alignment error.
+    pub alignment_errors: u64,
+    /// Frames dropped due to a lack of receive resources.
+    pub resource_errors: u64,
+    /// Frames dropped due to a receive overrun.
+    pub overrun_errors: u64,
+}
+
+impl core::ops::AddAssign for RxStatistics {
+    #[inline]
+    fn add_assign(&mut self, rhs: Self) {
+        self.frames = self.frames.saturating_add(rhs.frames);
+        self.octets = self.octets.saturating_add(rhs.octets);
+        self.fcs_errors = self.fcs_errors.saturating_add(rhs.fcs_errors);
+        self.length_field_errors = self
+            .length_field_errors
+            .saturating_add(rhs.length_field_errors);
+        self.symbol_errors = self.symbol_errors.saturating_add(rhs.symbol_errors);
+        self.alignment_errors = self.alignment_errors.saturating_add(rhs.alignment_errors);
+        self.resource_errors = self.resource_errors.saturating_add(rhs.resource_errors);
+        self.overrun_errors = self.overrun_errors.saturating_add(rhs.overrun_errors);
+    }
+}
+
+/// Selected TX and RX statistics counters.
+///
+/// The read methods of [EthernetLowLevel] return the counts since the last read. Use
+/// [core::ops::AddAssign] to keep running totals.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Statistics {
+    /// TX counters.
+    pub tx: TxStatistics,
+    /// RX counters.
+    pub rx: RxStatistics,
+}
+
+impl core::ops::AddAssign for Statistics {
+    #[inline]
+    fn add_assign(&mut self, rhs: Self) {
+        self.tx += rhs.tx;
+        self.rx += rhs.rx;
     }
 }
 
@@ -238,6 +332,7 @@ impl EthernetLowLevel {
     }
 
     /// Reset the peripheral, keeping the reset asserted for the given number of cycles.
+    #[inline]
     pub fn reset(&mut self, cycles: usize) {
         reset(self.id, cycles);
     }
@@ -299,6 +394,7 @@ impl EthernetLowLevel {
     ///
     /// It is probably a good idea to disable the receiver and transmitter while doing this.
     /// This function calls [Self::configure_clock_for_speed] and [Self::set_speed_and_duplex].
+    #[inline]
     pub fn configure_clock_and_speed_duplex(
         &mut self,
         speed: Speed,
@@ -310,6 +406,7 @@ impl EthernetLowLevel {
     }
 
     /// Configure the clock divisors for the given speed.
+    #[inline]
     pub fn configure_clock_for_speed(&mut self, speed: Speed, clk_collection: &ClockDivSet) {
         match speed {
             Speed::Mbps10 => self.configure_clock_divs(clk_collection.cfg_10_mbps),
@@ -391,6 +488,58 @@ impl EthernetLowLevel {
         if reset_rx_tx_queue_base_addr {
             self.regs.write_rx_buf_queue_base_addr(0);
             self.regs.write_tx_buf_queue_base_addr(0);
+        }
+    }
+
+    /// Read the [TxStatistics] counters.
+    ///
+    /// The hardware clears the counters on read, so this returns the counts since the last read.
+    /// Read often enough to avoid saturation. Any other read of the statistics registers takes
+    /// counts away from this one.
+    #[inline]
+    pub fn read_tx_statistics(&mut self) -> TxStatistics {
+        let mut regs = self.regs.statistics();
+        // The lower octet bits must be read before the upper bits.
+        let octets_low = regs.read_tx_octets_low();
+        let octets_high = regs.read_tx_octets_high() & 0xFFFF;
+        TxStatistics {
+            frames: regs.read_tx_count() as u64,
+            octets: ((octets_high as u64) << 32) | octets_low as u64,
+            underruns: regs.read_tx_underruns() as u64,
+            late_collisions: regs.read_late_collisions() as u64,
+            excessive_collisions: regs.read_excessive_collisions() as u64,
+        }
+    }
+
+    /// Read the [RxStatistics] counters.
+    ///
+    /// Same clear-on-read behaviour as [Self::read_tx_statistics].
+    #[inline]
+    pub fn read_rx_statistics(&mut self) -> RxStatistics {
+        let mut regs = self.regs.statistics();
+        // The lower octet bits must be read before the upper bits.
+        let octets_low = regs.read_rx_octets_low();
+        let octets_high = regs.read_rx_octets_high() & 0xFFFF;
+        RxStatistics {
+            frames: regs.read_rx_count() as u64,
+            octets: ((octets_high as u64) << 32) | octets_low as u64,
+            fcs_errors: regs.read_rx_frame_check_sequence_errors() as u64,
+            length_field_errors: regs.read_rx_length_field_errors() as u64,
+            symbol_errors: regs.read_rx_symbol_errors() as u64,
+            alignment_errors: regs.read_rx_alignment_errors() as u64,
+            resource_errors: regs.read_rx_resource_errors() as u64,
+            overrun_errors: regs.read_rx_overrun_errors() as u64,
+        }
+    }
+
+    /// Read the TX and RX [Statistics] counters.
+    ///
+    /// Same clear-on-read behaviour as [Self::read_tx_statistics].
+    #[inline]
+    pub fn read_statistics(&mut self) -> Statistics {
+        Statistics {
+            tx: self.read_tx_statistics(),
+            rx: self.read_rx_statistics(),
         }
     }
 

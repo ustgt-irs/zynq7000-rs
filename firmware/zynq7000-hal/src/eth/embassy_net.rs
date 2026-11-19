@@ -1,6 +1,7 @@
 //! Embassy-net driver for the Zynq 7000 ethernet peripheral.
 use core::sync::atomic::AtomicBool;
 
+use crate::eth::ErrorHandler;
 pub use crate::eth::smoltcp::DescriptorsAndBuffers;
 use crate::eth::smoltcp::{SmoltcpRxToken, SmoltcpTxToken};
 pub use crate::eth::{EthernetId, InterruptResult};
@@ -15,6 +16,7 @@ static LINK_STATE: AtomicBool = AtomicBool::new(false);
 /// This interrupt handler should be called when a Gigabit Ethernet interrupt occurs.
 ///
 /// It also handles embassy-net related waking up of tasks via  wakers.
+#[inline]
 pub fn on_interrupt(eth_id: EthernetId) -> InterruptResult {
     super::on_interrupt(eth_id, true, true)
 }
@@ -29,6 +31,7 @@ pub fn link_state() -> embassy_net_driver::LinkState {
 }
 
 /// Update the link state and wake the embassy-net link waker if it changed.
+#[inline]
 pub fn update_link_state(new_state: embassy_net_driver::LinkState) {
     let new_value = match new_state {
         embassy_net_driver::LinkState::Up => true,
@@ -40,22 +43,30 @@ pub fn update_link_state(new_state: embassy_net_driver::LinkState) {
 }
 
 /// embassy-net driver.
-pub struct Driver(super::smoltcp::CommonSmoltcpDriver);
+///
+/// Errors are reported to the [ErrorHandler]. The default `()` handler ignores them.
+pub struct Driver<ErrHandler = ()>(super::smoltcp::CommonSmoltcpDriver<ErrHandler>);
 
-impl Driver {
+impl<ErrHandler: ErrorHandler> Driver<ErrHandler> {
     /// Create the driver. The TX burst length is the number of TX descriptors.
-    pub fn new(eth: &super::Ethernet, mac_addr: [u8; 6], bufs: DescriptorsAndBuffers) -> Self {
+    pub fn new(
+        eth: &super::Ethernet,
+        mac_addr: [u8; 6],
+        bufs: DescriptorsAndBuffers,
+        error_handler: ErrHandler,
+    ) -> Self {
         let tx_burst_len = bufs.tx_burst_len();
         Self(super::smoltcp::CommonSmoltcpDriver::new(
             eth.id(),
             mac_addr,
             bufs,
             tx_burst_len,
+            error_handler,
         ))
     }
 }
 
-impl embassy_net_driver::Driver for Driver {
+impl<ErrHandler: ErrorHandler> embassy_net_driver::Driver for Driver<ErrHandler> {
     type RxToken<'a>
         = SmoltcpRxToken<'a>
     where
