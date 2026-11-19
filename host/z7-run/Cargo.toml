@@ -8,15 +8,11 @@ clap = { version = "4", features = ["derive"] }
 clap-num = { version = "1" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-# probe-rs = { path = "../../../probe-rs/probe-rs" }
-# probe-rs = { git = "https://github.com/robamu/probe-rs.git", branch = "master" }
-# probe-rs = { git = "https://github.com/probe-rs/probe-rs.git", rev = "96f32174cba6ec0a3d2f9097572ea8ec82ffb2f6" }
-# probe-rs = { version = "0.32" }
-# Must match x7dap's own probe-rs source exactly (see x7dap/Cargo.toml) - a different source
-# (even pointing at identical code) makes Cargo treat it as a distinct crate, breaking every
+# Must match x7dap's own probe-rs source exactly (see x7dap/Cargo.toml). A different source,
+# even pointing at identical code, makes Cargo treat it as a distinct crate, breaking every
 # JtagChain/ScanChainElement type shared between the two.
-probe-rs = { git = "https://github.com/robamu/probe-rs.git", branch = "add-new-memory-port" }
-x7dap = { git = "https://github.com/ustgt-irs/x7dap.git", branch = "use-probe-rs-jtag-abstraction" }
+probe-rs = { git = "https://github.com/probe-rs/probe-rs.git", rev = "187f19a8ce463e75470f48583fb3a3986403b145" }
+x7dap = { git = "https://github.com/ustgt-irs/x7dap.git", rev = "78a4ea747abcc54f6d80b7a94632907b43176fae" }
 anyhow = { version = "1" }
 ron = { version = "0.12" }
 toml = "1.1.4"
