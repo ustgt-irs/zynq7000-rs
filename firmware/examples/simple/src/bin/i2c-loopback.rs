@@ -3,8 +3,6 @@
 //! I2C0 is the master and I2C1 is a slave, connected internally with the SLCR loopback. No
 //! external wiring is required. The test sets the data the slave sends and checks the data the
 //! slave received.
-//!
-//! Only the UART used for logging is board specific.
 #![no_std]
 #![no_main]
 
@@ -16,17 +14,16 @@ use core::{
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pipe::Pipe};
 use embedded_hal::i2c::{NoAcknowledgeSource, Operation};
-use log::{error, info};
+use z7_defmt_rtt as _;
 use zynq7000::i2c::{InterruptControl, ReadWrite};
 use zynq7000_hal::{
-    BootMode, clocks::Clocks, generic_interrupt_handler, gpio, i2c, priv_tim::CpuPrivateTimer,
-    time::Hertz, uart,
+    BootMode, clocks::Clocks, generic_interrupt_handler, i2c, priv_tim::CpuPrivateTimer,
+    time::Hertz,
 };
 
 use zynq7000_rt as _;
 
 const PS_CLOCK_FREQUENCY: Hertz = Hertz::from_raw(33_333_300);
-const INIT_STRING: &str = "-- Zynq 7000 Zedboard I2C loopback example --\n\r";
 
 const SLAVE_ID: i2c::I2cId = i2c::I2cId::I2c1;
 const SLAVE_ADDR: u8 = 0x42;
@@ -52,24 +49,11 @@ fn main() -> ! {
     // Clock was already initialized by PS7 Init TCL script or FSBL, we just read it.
     let clocks = Clocks::new_from_regs(PS_CLOCK_FREQUENCY).unwrap();
 
-    let gpio_pins = gpio::Pins::new(periphs.gpio, gpio::Config::default());
-
-    // Set up the UART, we are logging with it.
-    let uart_clk_config = uart::ClockConfig::new_autocalc_with_error(clocks.io_clocks(), 115200)
-        .unwrap()
-        .0;
-    let mut uart = uart::Uart::new_with_mio_for_uart_1(
-        periphs.uart_1,
-        uart::Config::new_with_clk_config(uart_clk_config),
-        (gpio_pins.mio.mio48, gpio_pins.mio.mio49),
-    )
-    .unwrap();
-    uart.write_all(INIT_STRING.as_bytes());
-
-    zynq7000_hal::log::uart_blocking::init_with_busy_flag(uart, log::LevelFilter::Trace, false);
+    defmt::println!("-- Zynq 7000 I2C loopback example --");
 
     let boot_mode = BootMode::new_from_regs();
-    info!("Boot mode: {:?}", boot_mode);
+    // `BootMode` does not implement `defmt::Format`.
+    defmt::info!("Boot mode: {:?}", defmt::Debug2Format(&boot_mode));
 
     i2c::enable_i2c0_to_i2c1_loopback();
 
@@ -324,27 +308,32 @@ enum Failure {
     },
 }
 
-impl core::fmt::Display for Failure {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+impl defmt::Format for Failure {
+    fn format(&self, f: defmt::Formatter) {
         match self {
-            Failure::Bus(e) => write!(f, "{:?}", e),
-            Failure::Unexpected(result) => write!(f, "unexpected result {:?}", result),
+            // The I2C error does not implement `defmt::Format`.
+            Failure::Bus(e) => defmt::write!(f, "{:?}", defmt::Debug2Format(e)),
+            Failure::Unexpected(result) => {
+                defmt::write!(f, "unexpected result {:?}", defmt::Debug2Format(result))
+            }
             Failure::DataMismatch {
                 offset,
                 read,
                 expected,
-            } => write!(
+            } => defmt::write!(
                 f,
-                "byte {}: read {:#04x}, expected {:#04x}",
-                offset, read, expected
+                "byte {}: read {=u8:#04x}, expected {=u8:#04x}",
+                offset,
+                read,
+                expected
             ),
             Failure::LengthMismatch { read, expected } => {
-                write!(f, "length {}, expected {}", read, expected)
+                defmt::write!(f, "length {}, expected {}", read, expected)
             }
             Failure::TooManyInterrupts { max } => {
-                write!(f, "too many slave interrupts, expected at most {}", max)
+                defmt::write!(f, "too many slave interrupts, expected at most {}", max)
             }
-            Failure::SlaveTimeout => write!(f, "slave did not see the end of the transfer"),
+            Failure::SlaveTimeout => defmt::write!(f, "slave did not see the end of the transfer"),
         }
     }
 }
@@ -373,17 +362,19 @@ impl Report {
         match result {
             Ok(()) => {
                 self.passed += 1;
-                info!("[ok] {} ({} slave interrupts)", name, irqs);
+                defmt::info!("[ok] {} ({} slave interrupts)", name, irqs);
             }
-            Err(failure) => error!("[failed] {} ({} slave interrupts): {}", name, irqs, failure),
+            Err(failure) => {
+                defmt::error!("[failed] {} ({} slave interrupts): {}", name, irqs, failure)
+            }
         }
     }
 
     fn summary(&self) {
         if self.passed == self.total {
-            info!("all {} transfer tests passed", self.total);
+            defmt::info!("all {} transfer tests passed", self.total);
         } else {
-            error!(
+            defmt::error!(
                 "{} of {} transfer tests failed",
                 self.total - self.passed,
                 self.total
@@ -425,6 +416,6 @@ fn prefetch_handler(_faulting_addr: usize) -> ! {
 /// Panic handler
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    error!("Panic: {info:?}");
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {}
 }

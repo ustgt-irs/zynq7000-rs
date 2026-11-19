@@ -10,7 +10,9 @@ license = "MIT OR Apache-2.0"
 aarch32-cpu = { version = "0.4", features = ["critical-section-single-core"] }
 zynq7000-rt = { path = "../../zynq7000-rt" }
 zynq7000 = { path = "../../zynq7000" }
-zynq7000-hal = { path = "../../zynq7000-hal" }
+zynq7000-hal = { path = "../../zynq7000-hal", features = ["defmt"] }
+z7-defmt-rtt = { path = "../../z7-defmt-rtt" }
+defmt = "1"
 embedded-io = "0.7"
 embedded-hal = "1"
 arbitrary-int = "2"

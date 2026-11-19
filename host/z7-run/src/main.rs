@@ -512,8 +512,10 @@ const RTT_ATTACH_TIMEOUT: Duration = Duration::from_secs(2);
 /// work.
 fn detect_defmt(elf: &[u8]) -> anyhow::Result<Option<(u64, DefmtData)>> {
     let table = match defmt_decoder::Table::parse(elf) {
-        Ok(Some(table)) => table,
-        Ok(None) => return Ok(None),
+        // Linking the defmt crate is enough to get an empty table, for example through a
+        // dependency with a defmt feature. Only log messages make the table non-empty.
+        Ok(Some(table)) if !table.is_empty() => table,
+        Ok(_) => return Ok(None),
         Err(e) => {
             tracing::warn!("can not parse the defmt data of the ELF, not reading defmt logs: {e}");
             return Ok(None);

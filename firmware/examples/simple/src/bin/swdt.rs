@@ -7,9 +7,8 @@ use core::{
     panic::PanicInfo,
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
-use embedded_io::Write;
-use log::info;
-use zynq7000_hal::{clocks::Clocks, gpio, priv_tim::CpuPrivateTimer, swdt, time::Hertz, uart};
+use z7_defmt_rtt as _;
+use zynq7000_hal::{clocks::Clocks, gpio, priv_tim::CpuPrivateTimer, swdt, time::Hertz};
 
 /// False by default, because we want to show how the watchdog priodically elapsed.
 const RESET_ON_EXPIRY: bool = false;
@@ -28,8 +27,6 @@ static LOOP_COUNT: AtomicU32 = AtomicU32::new(0);
 /// Main loop poll period.
 const LOOP_DELAY_MS: u32 = 50;
 
-const INIT_STRING: &str = "-- Zynq 7000 SWDT example --\n\r";
-
 #[zynq7000_rt::entry]
 fn main() -> ! {
     let periphs = zynq7000_hal::init(zynq7000_hal::Config::default()).expect("HAL init failed");
@@ -39,20 +36,7 @@ fn main() -> ! {
     let mio_pins = gpio::mio::Pins::new(periphs.gpio);
     let mut led = gpio::Output::new_for_mio(mio_pins.mio7, gpio::PinState::High);
 
-    // Set up the UART and a blocking logger. The ISR itself only sets `EXPIRED`; the actual
-    // logging happens down in the main loop, outside of interrupt context.
-    let uart_clk_config = uart::ClockConfig::new_autocalc_with_error(clocks.io_clocks(), 115200)
-        .unwrap()
-        .0;
-    let mut uart = uart::Uart::new_with_mio_for_uart_1(
-        periphs.uart_1,
-        uart::Config::new_with_clk_config(uart_clk_config),
-        (mio_pins.mio48, mio_pins.mio49),
-    )
-    .unwrap();
-    uart.write_all(INIT_STRING.as_bytes());
-
-    zynq7000_hal::log::uart_blocking::init_with_locks(uart, log::LevelFilter::Trace);
+    defmt::println!("-- Zynq 7000 SWDT example --");
 
     zynq7000_hal::register_interrupt(
         zynq7000_hal::Interrupt::Spi(zynq7000_hal::SpiInterrupt::Swdt),
@@ -77,7 +61,7 @@ fn main() -> ! {
         if EXPIRED.swap(false, Ordering::Relaxed) {
             led.toggle();
             let loops = LOOP_COUNT.swap(0, Ordering::Relaxed);
-            info!(
+            defmt::info!(
                 "SWDT expired, ~{} ms since last expiry",
                 loops * LOOP_DELAY_MS
             );
@@ -130,8 +114,7 @@ fn prefetch_handler(_faulting_addr: usize) -> ! {
 /// Panic handler
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    let mut uart = unsafe { uart::Uart::steal(uart::UartId::Uart1) };
-    writeln!(uart, "panic: {}\r", info).ok();
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {
         nop();
     }

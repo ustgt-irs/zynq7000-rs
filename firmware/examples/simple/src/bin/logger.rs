@@ -1,10 +1,12 @@
-//! Example which uses the UART1 to send log messages.
+//! Example which sends log messages over UART1 with the blocking `log` logger, and over RTT
+//! with `defmt`.
 #![no_std]
 #![no_main]
 
 use aarch32_cpu::asm::nop;
 use core::{panic::PanicInfo, sync::atomic::AtomicU64};
 use log::{error, info};
+use z7_defmt_rtt as _;
 use zynq7000_hal::{
     BootMode,
     clocks::Clocks,
@@ -59,6 +61,7 @@ fn main() -> ! {
     )
     .unwrap();
     uart.write_all(b"-- Zynq 7000 Logging example --\n\r");
+    defmt::println!("-- Zynq 7000 Logging example --");
     // Safety: We are not multi-threaded yet.
     zynq7000_hal::log::uart_blocking::init_with_busy_flag(uart, log::LevelFilter::Trace, false);
 
@@ -70,6 +73,7 @@ fn main() -> ! {
         let gtc = gtc.read_timer();
         info!("Hello, world!");
         info!("GTC ticks: {gtc}");
+        defmt::info!("GTC ticks: {}", gtc);
         led.toggle();
         for _ in 0..5_000_000 {
             nop();
@@ -120,5 +124,6 @@ fn prefetch_handler(_faulting_addr: usize) -> ! {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     error!("Panic: {info:?}");
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {}
 }

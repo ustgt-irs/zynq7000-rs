@@ -23,6 +23,11 @@ fn main() {
         .unwrap();
     println!("cargo:rustc-link-search={}", out.display());
 
+    // Only the examples logging with defmt are linked with the defmt linker script.
+    for bin in ["gtc-ticks", "i2c-loopback", "logger", "sgi", "swdt"] {
+        println!("cargo:rustc-link-arg-bin={bin}=-Tdefmt.x");
+    }
+
     // By default, Cargo will re-run a build script whenever
     // any file in the project changes. By specifying `memory.x`
     // here, we ensure the build script is only re-run when

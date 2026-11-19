@@ -4,16 +4,10 @@
 
 use aarch32_cpu::asm::nop;
 use core::{panic::PanicInfo, sync::atomic::AtomicU64};
-use log::{error, info};
+use z7_defmt_rtt as _;
 use zynq7000_hal::{
-    Interrupt,
-    clocks::Clocks,
-    gic, gpio,
-    gtc::GlobalTimerCounter,
-    l2_cache, mmu,
-    prelude::*,
+    Interrupt, clocks::Clocks, gic, gpio, gtc::GlobalTimerCounter, l2_cache, mmu, prelude::*,
     time::Hertz,
-    uart::{ClockConfig, Config, Uart},
 };
 
 // Define the clock frequency as a constant
@@ -38,10 +32,6 @@ fn main() -> ! {
     gic.enable();
     // Enable interrupt exception.
     unsafe { gic.enable_interrupts() };
-    // Set up the UART, we are logging with it.
-    let uart_clk_config = ClockConfig::new_autocalc_with_error(clocks.io_clocks(), 115200)
-        .unwrap()
-        .0;
     let mut gtc = GlobalTimerCounter::new(dp.gtc, clocks.arm_clocks());
     let ticks = gtc.frequency_to_ticks(1000.Hz());
     gtc.set_auto_increment_value(ticks);
@@ -52,18 +42,11 @@ fn main() -> ! {
 
     // This structure holds all MIO pins.
     let mio_pins = gpio::mio::Pins::new(dp.gpio);
-    let mut uart = Uart::new_with_mio_for_uart_1(
-        dp.uart_1,
-        Config::new_with_clk_config(uart_clk_config),
-        (mio_pins.mio48, mio_pins.mio49),
-    )
-    .unwrap();
-    uart.write_all(b"-- Zynq 7000 GTC Ticks example --\n\r");
-    zynq7000_hal::log::uart_blocking::init_with_busy_flag(uart, log::LevelFilter::Trace, false);
+    defmt::println!("-- Zynq 7000 GTC Ticks example --");
 
     let mut led = gpio::Output::new_for_mio(mio_pins.mio7, gpio::PinState::Low);
     loop {
-        info!(
+        defmt::info!(
             "MS_TICKS: {}",
             MS_TICKS.load(core::sync::atomic::Ordering::Relaxed)
         );
@@ -116,6 +99,6 @@ fn prefetch_handler(_faulting_addr: usize) -> ! {
 /// Panic handler
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    error!("Panic: {info:?}");
+    defmt::error!("Panic: {}", defmt::Display2Format(info));
     loop {}
 }
